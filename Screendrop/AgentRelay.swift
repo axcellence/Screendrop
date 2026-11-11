@@ -33,7 +33,7 @@ nonisolated enum AgentSocket {
     /// each bundle gets its own socket and both can run at once.
     private static var socketFileName: String {
         let bundleID = Bundle.main.bundleIdentifier ?? ""
-        guard bundleID != "com.fayazahmed.Screendrop",
+        guard bundleID != "com.axcellence.Screendrop",
               let suffix = bundleID.split(separator: ".").last, !suffix.isEmpty else {
             return "agent.sock"
         }
@@ -192,7 +192,7 @@ nonisolated enum AgentRelay {
         private func openSocket() -> Int32? {
             if let fd = AgentSocket.connect() { return fd }
 
-            let bundleID = Bundle.main.bundleIdentifier ?? "com.fayazahmed.Screendrop"
+            let bundleID = Bundle.main.bundleIdentifier ?? "com.axcellence.Screendrop"
             let alreadyRunning = !NSRunningApplication
                 .runningApplications(withBundleIdentifier: bundleID).isEmpty
             if !alreadyRunning {

@@ -17,6 +17,10 @@ import Sparkle
 final class UpdaterManager: NSObject, ObservableObject {
     static let shared = UpdaterManager()
 
+    /// This fork is built from source and updated by merging upstream. The feed in Info.plist is
+    /// the official one, and following it would replace this build with the official release.
+    private static let followsOfficialReleases = false
+
     private let controller: SPUStandardUpdaterController
     private let availability = UpdateAvailabilityDelegate()
     private var lastInformationCheck: Date?
@@ -45,6 +49,7 @@ final class UpdaterManager: NSObject, ObservableObject {
     }
 
     func start() {
+        guard Self.followsOfficialReleases else { return }
         #if DEBUG
         return
         #else
@@ -56,6 +61,7 @@ final class UpdaterManager: NSObject, ObservableObject {
     /// Looks for a newer release without showing any Sparkle UI, so the
     /// Library can offer it. At most once an hour.
     func checkForUpdateInformation() {
+        guard Self.followsOfficialReleases else { return }
         #if DEBUG
         return
         #else
@@ -67,6 +73,7 @@ final class UpdaterManager: NSObject, ObservableObject {
     }
 
     func checkForUpdates() {
+        guard Self.followsOfficialReleases else { return }
         #if DEBUG
         return
         #else
