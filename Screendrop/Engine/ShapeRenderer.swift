@@ -60,7 +60,7 @@ enum AnnoShapeRenderer {
     static func elements(for shape: AnnoShape, in document: AnnoDocument) -> [RenderElement] {
         switch shape.kind {
         case let .geo(props):
-            geoElements(props)
+            geoElements(props, seed: shape.id.raw)
         case let .draw(props):
             drawElements(props)
         case .arrow:
@@ -116,7 +116,7 @@ enum AnnoShapeRenderer {
 
     // MARK: - Geo
 
-    private static func geoElements(_ props: GeoProps) -> [RenderElement] {
+    private static func geoElements(_ props: GeoProps, seed: String) -> [RenderElement] {
         let path = GeoPaths.path(for: props)
 
         if props.fill != .none {
@@ -125,6 +125,10 @@ enum AnnoShapeRenderer {
                 fill: props.swatch.nsColor,
                 stroke: nil
             )]
+        }
+        // Hand-drawn outlines are brush ink: a filled shape, like a freehand stroke.
+        if props.dash == .draw, let ink = HandDrawn.geoInk(props, seed: seed) {
+            return [RenderElement(content: .path(ink), fill: props.swatch.nsColor, stroke: nil)]
         }
         return [strokeElement(
             path: path,
@@ -179,21 +183,50 @@ enum AnnoShapeRenderer {
 
     // MARK: - Arrow
 
+    private static func bodyLength(_ info: ArrowInfo) -> Double {
+        switch info.body {
+        case let .straight(start, end): Vec.dist(start, end)
+        case let .arc(arc): abs(arc.length)
+        }
+    }
+
     private static func arrowElements(_ shape: AnnoShape, in document: AnnoDocument) -> [RenderElement] {
         guard let props = shape.arrowProps,
               let info = document.arrowInfo(shape.id),
               info.isValid else { return [] }
 
+        let isHandDrawn = props.dash == .draw
+        let hasHead = info.start.arrowhead != .none || info.end.arrowhead != .none
+
         var elements: [RenderElement] = []
-        elements.append(strokeElement(
-            path: ArrowPath.body(info),
-            dash: props.dash,
-            strokeWidth: props.strokeWidth,
-            color: props.swatch.nsColor,
-            seed: shape.id.raw
-        ))
+        if isHandDrawn, let ink = HandDrawn.arrowBodyInk(
+            info, strokeWidth: props.strokeWidth, hasHead: hasHead, seed: shape.id.raw
+        ) {
+            elements.append(RenderElement(content: .path(ink), fill: props.swatch.nsColor, stroke: nil))
+        } else {
+            elements.append(strokeElement(
+                path: ArrowPath.body(info),
+                dash: props.dash,
+                strokeWidth: props.strokeWidth,
+                color: props.swatch.nsColor,
+                seed: shape.id.raw
+            ))
+        }
 
         for side in [ArrowTerminal.start, ArrowTerminal.end] {
+            // The open arrowhead is drawn by hand too; the solid heads keep their exact geometry,
+            // which is what makes them recognisable.
+            let type = side == .end ? info.end.arrowhead : info.start.arrowhead
+            if isHandDrawn, type == .arrow {
+                let points = Arrowheads.arrowPoints(info, side, props.strokeWidth)
+                if let ink = HandDrawn.arrowheadInk(
+                    tip: points.point, back: points.int, bodyLength: bodyLength(info),
+                    strokeWidth: props.strokeWidth, seed: shape.id.raw + side.rawValue
+                ) {
+                    elements.append(RenderElement(content: .path(ink), fill: props.swatch.nsColor, stroke: nil))
+                    continue
+                }
+            }
             guard let head = Arrowheads.path(info, side, props.strokeWidth) else { continue }
             elements.append(RenderElement(
                 content: .path(head.path.solidPath()),

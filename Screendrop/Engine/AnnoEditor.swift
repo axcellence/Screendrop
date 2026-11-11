@@ -131,6 +131,8 @@ final class AnnoEditor {
     var currentSwatch: AnnotationSwatch = .red
     /// Stroke width as the inspector's slider value; converted to page units on creation.
     var currentStrokeWidth: Double = 4
+    /// Whether new outlines and lines are hand-drawn (`.draw`) or clean (`.solid`).
+    var currentDash: DashStyle = .draw
     var currentRedactionDensity: Double = 0.55
     var currentTextFontSize: Double = 48
     var currentFontFamily: AnnoFontFamily = .pro

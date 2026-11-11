@@ -39,6 +39,8 @@ final class AnnotationEditorModel {
     var selectedTool: AnnotationTool = .rectangle
     var selectedSwatch: AnnotationSwatch = .red
     var strokeWidth: CGFloat = 4
+    /// Whether new outlines and lines are hand-drawn rather than clean.
+    var isHandDrawn = true
     var redactionDensity: CGFloat = 0.55
     var backgroundSettings = AnnotationBackgroundSettings()
     var appliedBackgroundPresetID: AnnotationBackgroundPreset.ID?
@@ -132,6 +134,7 @@ final class AnnotationEditorModel {
 
     var isColorStyleAvailable: Bool { isStyleAvailable { $0.supportsColorStyle } }
     var isStrokeStyleAvailable: Bool { isStyleAvailable { $0.supportsStrokeStyle } }
+    var isHandDrawnStyleAvailable: Bool { isStyleAvailable { $0.supportsHandDrawnStyle } }
     var isRedactionStyleAvailable: Bool { isStyleAvailable { $0.supportsRedactionDensityStyle } }
 
     var hasInspectorStyleControls: Bool {
@@ -470,6 +473,22 @@ final class AnnotationEditorModel {
         }
     }
 
+    /// Switch outlines and lines between hand-drawn and clean, for new shapes and the selection.
+    func setHandDrawn(_ handDrawn: Bool) {
+        isHandDrawn = handDrawn
+        let dash: DashStyle = handDrawn ? .draw : .solid
+        engine.currentDash = dash
+        saveAnnotationPreset()
+
+        engine.applyStyleToSelection { shape in
+            switch shape.kind {
+            case var .geo(p): p.dash = dash; shape.kind = .geo(p)
+            case var .arrow(p): p.dash = dash; shape.kind = .arrow(p)
+            default: break
+            }
+        }
+    }
+
     func setRedactionDensity(_ density: CGFloat) {
         redactionDensity = density
         engine.currentRedactionDensity = Double(density)
@@ -493,6 +512,11 @@ final class AnnotationEditorModel {
         if shape.tool.supportsStrokeStyle, shape.strokeWidth > 0 {
             strokeWidth = CGFloat(engine.sliderStrokeWidth(shape.strokeWidth))
             engine.currentStrokeWidth = Double(strokeWidth)
+        }
+        if shape.tool.supportsHandDrawnStyle {
+            let dash = shape.geoProps?.dash ?? shape.arrowProps?.dash ?? .solid
+            isHandDrawn = dash == .draw
+            engine.currentDash = isHandDrawn ? .draw : .solid
         }
         if let props = shape.redactionProps {
             redactionDensity = CGFloat(props.density)
@@ -646,6 +670,7 @@ final class AnnotationEditorModel {
         selectedTool = Self.startingTool(lastUsed: preset.selectedTool)
         selectedSwatch = preset.swatch
         strokeWidth = CGFloat(preset.strokeWidth)
+        isHandDrawn = preset.resolvedIsHandDrawn
         redactionDensity = CGFloat(preset.redactionDensity)
         textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
         textFontSize = CGFloat(preset.textFontSize)
@@ -657,6 +682,7 @@ final class AnnotationEditorModel {
         engine.tool = selectedTool
         engine.currentSwatch = selectedSwatch
         engine.currentStrokeWidth = Double(strokeWidth)
+        engine.currentDash = isHandDrawn ? .draw : .solid
         engine.currentRedactionDensity = Double(redactionDensity)
         engine.currentFontFamily = textFontFamily
         engine.currentTextFontSize = Double(textFontSize)
@@ -679,7 +705,8 @@ final class AnnotationEditorModel {
             textIsBold: textIsBold,
             textIsItalic: textIsItalic,
             textIsUnderline: textIsUnderline,
-            textAlignmentRawValue: textAlignment.rawValue
+            textAlignmentRawValue: textAlignment.rawValue,
+            isHandDrawn: isHandDrawn
         )
         AnnotationPresetStore.save(preset)
     }

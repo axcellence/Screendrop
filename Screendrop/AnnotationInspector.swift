@@ -315,6 +315,26 @@ struct AnnotationEditorInspector: View {
                 }
             }
 
+            if model.isHandDrawnStyleAvailable {
+                InspectorRow("Style") {
+                    InspectorSegmented(
+                        options: [true, false],
+                        isSelected: { $0 == model.isHandDrawn },
+                        onTap: { handDrawn in
+                            onEditorAction()
+                            model.setHandDrawn(handDrawn)
+                        },
+                        label: { handDrawn in
+                            Text(handDrawn ? "Hand-drawn" : "Clean")
+                                .font(.inspectorSegment)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        },
+                        height: InspectorMetrics.controlHeight
+                    )
+                }
+            }
+
             if model.isRedactionStyleAvailable {
                 InspectorSlider(
                     "Strength",

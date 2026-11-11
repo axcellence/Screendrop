@@ -114,6 +114,16 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Outlines and lines can be drawn by hand or clean; everything else has one look.
+    var supportsHandDrawnStyle: Bool {
+        switch self {
+        case .rectangle, .ellipse, .line, .arrow:
+            true
+        case .select, .filledRectangle, .freehand, .numberedCircle, .pixelate, .blur, .text, .highlight:
+            false
+        }
+    }
+
     var supportsRedactionDensityStyle: Bool {
         isRedactionTool
     }
