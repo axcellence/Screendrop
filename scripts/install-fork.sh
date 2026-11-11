@@ -28,6 +28,16 @@ fi
 osascript -e 'tell application "Screendrop" to quit' >/dev/null 2>&1 || true
 sleep 1
 
+# First install on this Mac: start from the official app's settings rather than from scratch.
+# The fork has its own bundle ID, so it would otherwise not see them. Never overwrites settings
+# the fork already has.
+official="com.fayazahmed.Screendrop"
+fork="com.axcellence.Screendrop"
+if ! defaults read "$fork" >/dev/null 2>&1 && defaults read "$official" >/dev/null 2>&1; then
+  echo "Copying settings from the official app…"
+  defaults export "$official" - | defaults import "$fork" -
+fi
+
 echo "Installing to /Applications…"
 rm -rf /Applications/Screendrop.app
 ditto "$app" /Applications/Screendrop.app

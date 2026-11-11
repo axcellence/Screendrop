@@ -33,7 +33,9 @@ scripts/install-fork.sh
 ```
 
 Needs Xcode 26.4 or newer, signed in to the team set in the project. The script builds a Release
-copy and replaces `/Applications/Screendrop.app`.
+copy and replaces `/Applications/Screendrop.app`. On its first run on a Mac it copies the official
+app's settings across; the capture library is shared already. macOS will ask for screen recording
+permission again, because it is a differently signed app.
 
 ## Pick up a new upstream release
 
