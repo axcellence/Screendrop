@@ -56,6 +56,14 @@ struct GeoProps: Codable, Equatable {
     var cornerRadius: Double = 0
 }
 
+/// What a freehand stroke is drawn with.
+enum DrawInk: String, CaseIterable, Codable {
+    /// The pen: opaque ink that swells and thins with speed or pressure.
+    case pen
+    /// The highlighter: a constant-width band that tints what is beneath it and leaves text dark.
+    case marker
+}
+
 struct DrawProps: Codable, Equatable {
     /// Points in the shape's local space; `z` carries pressure.
     var points: [Vec] = []
@@ -64,6 +72,21 @@ struct DrawProps: Codable, Equatable {
     var isClosed = false
     var swatch: AnnotationSwatch = .red
     var strokeWidth: Double = 8
+    var ink: DrawInk = .pen
+}
+
+extension DrawProps {
+    /// Strokes saved before the highlighter existed carry no ink style; they are pen strokes.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        points = try container.decode([Vec].self, forKey: .points)
+        isComplete = try container.decode(Bool.self, forKey: .isComplete)
+        isPen = try container.decode(Bool.self, forKey: .isPen)
+        isClosed = try container.decode(Bool.self, forKey: .isClosed)
+        swatch = try container.decode(AnnotationSwatch.self, forKey: .swatch)
+        strokeWidth = try container.decode(Double.self, forKey: .strokeWidth)
+        ink = try container.decodeIfPresent(DrawInk.self, forKey: .ink) ?? .pen
+    }
 }
 
 enum Arrowhead: String, CaseIterable, Codable {
@@ -214,7 +237,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
             case (.rectangle, .solid): .filledRectangle
             case (.ellipse, _): .ellipse
             }
-        case .draw: .freehand
+        case let .draw(p): p.ink == .marker ? .marker : .freehand
         case let .arrow(p):
             p.arrowheadStart == .none && p.arrowheadEnd == .none ? .line : .arrow
         case .text: .text
@@ -239,7 +262,8 @@ struct AnnoShape: Codable, Equatable, Identifiable {
     var isFilled: Bool {
         switch kind {
         case let .geo(p): p.fill != .none
-        case let .draw(p): p.isClosed
+        // A highlighter band is grabbed anywhere on it; a pen stroke only once it closes.
+        case let .draw(p): p.isClosed || p.ink == .marker
         case .arrow: false
         // Text, redactions, the highlight and numbered callouts are solid objects.
         case .text, .redaction, .highlight, .numbered: true
@@ -263,6 +287,12 @@ struct AnnoShape: Codable, Equatable, Identifiable {
 
     var isHighlight: Bool {
         if case .highlight = kind { return true }
+        return false
+    }
+
+    /// A highlighter stroke, as opposed to `isHighlight`, the spotlight.
+    var isMarker: Bool {
+        if case let .draw(p) = kind { return p.ink == .marker }
         return false
     }
 

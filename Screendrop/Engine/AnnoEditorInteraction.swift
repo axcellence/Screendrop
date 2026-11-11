@@ -15,7 +15,7 @@ extension AnnoEditor {
         switch tool {
         case .select:
             beginSelectInteraction(pointer)
-        case .freehand:
+        case .freehand, .marker:
             beginDrawing(pointer)
         case .text:
             // Clicking existing text edits it; clicking empty canvas starts a new one.
@@ -111,8 +111,14 @@ extension AnnoEditor {
     private func beginDrawing(_ pointer: PointerInfo) {
         markUndo()
         var props = DrawProps()
-        props.swatch = currentSwatch
-        props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
+        if tool == .marker {
+            props.ink = .marker
+            props.swatch = currentMarkerSwatch
+            props.strokeWidth = pageStrokeWidth(currentMarkerWidth)
+        } else {
+            props.swatch = currentSwatch
+            props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
+        }
         props.isPen = pointer.isPen
         props.points = [Vec(0, 0, pointer.isPen ? pointer.pressure : 0.5)]
         let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .draw(props))

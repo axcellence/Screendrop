@@ -42,8 +42,10 @@ struct AnnotationStylePreset: Codable, Equatable {
     var textIsItalic = false
     var textIsUnderline = false
     var textAlignmentRawValue = NSTextAlignment.left.rawValue
-    // Optional, so presets saved before this existed still load instead of resetting.
+    // Optional, so presets saved before these existed still load instead of resetting.
     var isHandDrawn: Bool?
+    var markerSwatch: CodableSwatch?
+    var markerWidth: Double?
 
     var selectedTool: AnnotationTool {
         AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle
@@ -63,6 +65,13 @@ struct AnnotationStylePreset: Codable, Equatable {
 
     /// Hand-drawn unless the user has switched to clean.
     var resolvedIsHandDrawn: Bool { isHandDrawn ?? true }
+
+    var resolvedMarkerSwatch: AnnotationSwatch {
+        guard let markerSwatch else { return .markerYellow }
+        return AnnotationSwatch.allCases.first { $0.id == markerSwatch.id } ?? markerSwatch.annotationSwatch
+    }
+
+    var resolvedMarkerWidth: Double { markerWidth ?? 24 }
 }
 
 struct CodableSwatch: Codable, Equatable {

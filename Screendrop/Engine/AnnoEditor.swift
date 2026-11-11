@@ -133,6 +133,9 @@ final class AnnoEditor {
     var currentStrokeWidth: Double = 4
     /// Whether new outlines and lines are hand-drawn (`.draw`) or clean (`.solid`).
     var currentDash: DashStyle = .draw
+    /// The highlighter keeps its own colour and size, apart from the pen's.
+    var currentMarkerSwatch: AnnotationSwatch = .markerYellow
+    var currentMarkerWidth: Double = 24
     var currentRedactionDensity: Double = 0.55
     var currentTextFontSize: Double = 48
     var currentFontFamily: AnnoFontFamily = .pro

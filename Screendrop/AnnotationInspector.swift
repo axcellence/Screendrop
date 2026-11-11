@@ -299,7 +299,7 @@ struct AnnotationEditorInspector: View {
         } else {
             if model.isColorStyleAvailable {
                 InspectorRow("Color") {
-                    AnnotationSwatchStrip(selectedSwatch: model.selectedSwatch) { swatch in
+                    AnnotationSwatchStrip(selectedSwatch: model.activeSwatch) { swatch in
                         onEditorAction()
                         model.setSwatch(swatch)
                     }
@@ -307,8 +307,14 @@ struct AnnotationEditorInspector: View {
             }
 
             if model.isStrokeStyleAvailable {
-                InspectorRow("Stroke") {
-                    AnnotationStrokePicker(strokeWidth: model.strokeWidth) { strokeWidth in
+                // The highlighter is sized like a marker tip, well beyond any pen stroke.
+                InspectorRow(model.isMarkerStyleActive ? "Size" : "Stroke") {
+                    AnnotationStrokePicker(
+                        strokeWidth: model.activeStrokeWidth,
+                        widths: model.isMarkerStyleActive
+                            ? AnnotationStrokePicker.markerWidths
+                            : AnnotationStrokePicker.penWidths
+                    ) { strokeWidth in
                         onEditorAction()
                         model.setStrokeWidth(strokeWidth)
                     }

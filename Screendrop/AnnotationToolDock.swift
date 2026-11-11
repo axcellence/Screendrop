@@ -29,7 +29,7 @@ struct AnnotationToolDock: View {
     private static let groups: [[AnnotationTool]] = [
         [.select],
         [.rectangle, .filledRectangle, .ellipse, .highlight],
-        [.arrow, .line, .freehand],
+        [.arrow, .line, .freehand, .marker],
         [.text, .numberedCircle],
         [.pixelate, .blur],
     ]
@@ -167,6 +167,7 @@ private extension AnnotationTool {
         case .arrow: "A"
         case .pixelate: "P"
         case .blur: "B"
+        case .marker: "M"
         case .numberedCircle: "1"
         default: nil
         }

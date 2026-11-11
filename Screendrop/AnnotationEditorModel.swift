@@ -41,6 +41,10 @@ final class AnnotationEditorModel {
     var strokeWidth: CGFloat = 4
     /// Whether new outlines and lines are hand-drawn rather than clean.
     var isHandDrawn = true
+    /// The highlighter's own colour and size, kept apart from the pen's so switching between the
+    /// two never drags a thin red pen setting onto a highlight or the reverse.
+    var markerSwatch: AnnotationSwatch = .markerYellow
+    var markerWidth: CGFloat = 24
     var redactionDensity: CGFloat = 0.55
     var backgroundSettings = AnnotationBackgroundSettings()
     var appliedBackgroundPresetID: AnnotationBackgroundPreset.ID?
@@ -135,6 +139,11 @@ final class AnnotationEditorModel {
     var isColorStyleAvailable: Bool { isStyleAvailable { $0.supportsColorStyle } }
     var isStrokeStyleAvailable: Bool { isStyleAvailable { $0.supportsStrokeStyle } }
     var isHandDrawnStyleAvailable: Bool { isStyleAvailable { $0.supportsHandDrawnStyle } }
+
+    /// Whether the inspector is showing the highlighter's colour and size rather than the pen's.
+    var isMarkerStyleActive: Bool { inspectedTool == .marker }
+    var activeSwatch: AnnotationSwatch { isMarkerStyleActive ? markerSwatch : selectedSwatch }
+    var activeStrokeWidth: CGFloat { isMarkerStyleActive ? markerWidth : strokeWidth }
     var isRedactionStyleAvailable: Bool { isStyleAvailable { $0.supportsRedactionDensityStyle } }
 
     var hasInspectorStyleControls: Bool {
@@ -441,8 +450,13 @@ final class AnnotationEditorModel {
     }
 
     func setSwatch(_ swatch: AnnotationSwatch) {
-        selectedSwatch = swatch
-        engine.currentSwatch = swatch
+        if isMarkerStyleActive {
+            markerSwatch = swatch
+            engine.currentMarkerSwatch = swatch
+        } else {
+            selectedSwatch = swatch
+            engine.currentSwatch = swatch
+        }
         saveAnnotationPreset()
 
         engine.applyStyleToSelection { shape in
@@ -458,8 +472,13 @@ final class AnnotationEditorModel {
     }
 
     func setStrokeWidth(_ width: CGFloat) {
-        strokeWidth = width
-        engine.currentStrokeWidth = Double(width)
+        if isMarkerStyleActive {
+            markerWidth = width
+            engine.currentMarkerWidth = Double(width)
+        } else {
+            strokeWidth = width
+            engine.currentStrokeWidth = Double(width)
+        }
         saveAnnotationPreset()
 
         let pageWidth = engine.pageStrokeWidth(Double(width))
@@ -505,13 +524,24 @@ final class AnnotationEditorModel {
     /// Pull the inspector's values from whatever is selected, so selecting a shape shows its style.
     private func syncStyleFromSelection() {
         guard let shape = selectedShape else { return }
-        if let swatch = shape.swatch, shape.tool.supportsColorStyle {
-            selectedSwatch = swatch
-            engine.currentSwatch = swatch
-        }
-        if shape.tool.supportsStrokeStyle, shape.strokeWidth > 0 {
-            strokeWidth = CGFloat(engine.sliderStrokeWidth(shape.strokeWidth))
-            engine.currentStrokeWidth = Double(strokeWidth)
+        if shape.isMarker {
+            if let swatch = shape.swatch {
+                markerSwatch = swatch
+                engine.currentMarkerSwatch = swatch
+            }
+            if shape.strokeWidth > 0 {
+                markerWidth = CGFloat(engine.sliderStrokeWidth(shape.strokeWidth))
+                engine.currentMarkerWidth = Double(markerWidth)
+            }
+        } else {
+            if let swatch = shape.swatch, shape.tool.supportsColorStyle {
+                selectedSwatch = swatch
+                engine.currentSwatch = swatch
+            }
+            if shape.tool.supportsStrokeStyle, shape.strokeWidth > 0 {
+                strokeWidth = CGFloat(engine.sliderStrokeWidth(shape.strokeWidth))
+                engine.currentStrokeWidth = Double(strokeWidth)
+            }
         }
         if shape.tool.supportsHandDrawnStyle {
             let dash = shape.geoProps?.dash ?? shape.arrowProps?.dash ?? .solid
@@ -671,6 +701,8 @@ final class AnnotationEditorModel {
         selectedSwatch = preset.swatch
         strokeWidth = CGFloat(preset.strokeWidth)
         isHandDrawn = preset.resolvedIsHandDrawn
+        markerSwatch = preset.resolvedMarkerSwatch
+        markerWidth = CGFloat(preset.resolvedMarkerWidth)
         redactionDensity = CGFloat(preset.redactionDensity)
         textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
         textFontSize = CGFloat(preset.textFontSize)
@@ -683,6 +715,8 @@ final class AnnotationEditorModel {
         engine.currentSwatch = selectedSwatch
         engine.currentStrokeWidth = Double(strokeWidth)
         engine.currentDash = isHandDrawn ? .draw : .solid
+        engine.currentMarkerSwatch = markerSwatch
+        engine.currentMarkerWidth = Double(markerWidth)
         engine.currentRedactionDensity = Double(redactionDensity)
         engine.currentFontFamily = textFontFamily
         engine.currentTextFontSize = Double(textFontSize)
@@ -706,7 +740,9 @@ final class AnnotationEditorModel {
             textIsItalic: textIsItalic,
             textIsUnderline: textIsUnderline,
             textAlignmentRawValue: textAlignment.rawValue,
-            isHandDrawn: isHandDrawn
+            isHandDrawn: isHandDrawn,
+            markerSwatch: CodableSwatch(swatch: markerSwatch),
+            markerWidth: Double(markerWidth)
         )
         AnnotationPresetStore.save(preset)
     }

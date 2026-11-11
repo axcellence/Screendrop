@@ -166,7 +166,8 @@ final class AnnoCanvasNSView: NSView {
             },
             spotlightClip: spotlightClip,
             isFlippedContext: true,
-            redactionPreviewCache: redactionCache
+            redactionPreviewCache: redactionCache,
+            backdrop: sourceImage
         )
 
         // The shape being typed into is drawn by its text overlay instead, so the two don't double

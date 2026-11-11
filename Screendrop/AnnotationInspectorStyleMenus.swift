@@ -156,13 +156,17 @@ struct AnnotationSwatchStrip: View {
 /// every other choice picker in the inspector.
 struct AnnotationStrokePicker: View {
     let strokeWidth: CGFloat
+    var widths: [CGFloat] = AnnotationStrokePicker.penWidths
     let onSelect: (CGFloat) -> Void
 
-    private static let widths: [CGFloat] = [2, 4, 6, 8, 12]
+    static let penWidths: [CGFloat] = [2, 4, 6, 8, 12]
+    /// The highlighter's tip sizes, on the same scale as the pen's: about a line of small text
+    /// up to a heading.
+    static let markerWidths: [CGFloat] = [12, 18, 24, 32, 44]
 
     var body: some View {
         InspectorSegmented(
-            options: Self.widths,
+            options: widths,
             isSelected: { $0 == strokeWidth },
             onTap: onSelect,
             label: { width in
@@ -175,8 +179,11 @@ struct AnnotationStrokePicker: View {
         )
     }
 
+    /// Dots grow with the width, scaled so the largest option of either set fills its segment.
     private func dotDiameter(for width: CGFloat) -> CGFloat {
-        min(width + 2, 13)
+        let largest = widths.max() ?? 12
+        guard largest > 12 else { return min(width + 2, 13) }
+        return max(4, 13 * width / largest)
     }
 }
 

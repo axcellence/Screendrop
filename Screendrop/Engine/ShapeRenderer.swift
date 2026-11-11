@@ -62,7 +62,7 @@ enum AnnoShapeRenderer {
         case let .geo(props):
             geoElements(props, seed: shape.id.raw)
         case let .draw(props):
-            drawElements(props)
+            props.ink == .marker ? markerElements(props, seed: shape.id.raw) : drawElements(props)
         case .arrow:
             arrowElements(shape, in: document)
         case let .text(props):
@@ -111,6 +111,17 @@ enum AnnoShapeRenderer {
             // The outline can double back on itself at tight corners; non-zero winding keeps those
             // overlaps solid instead of punching holes in the stroke.
             usesEvenOddFill: false
+        )]
+    }
+
+    /// The highlighter's band. `AnnoShapeDrawing` blends it into the screenshot in its own pass,
+    /// under every other annotation, rather than painting it over like the rest.
+    private static func markerElements(_ props: DrawProps, seed: String) -> [RenderElement] {
+        guard !props.points.isEmpty else { return [] }
+        return [RenderElement(
+            content: .path(MarkerInk.path(props, seed: seed)),
+            fill: props.swatch.nsColor.withAlphaComponent(props.swatch.alpha * MarkerInk.opacity),
+            stroke: nil
         )]
     }
 

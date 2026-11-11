@@ -242,6 +242,12 @@ enum AnnoShapeGeometry {
     /// The drawing app's `DrawShapeUtil.getGeometry`: the streamlined centerline, or a circle for
     /// a dot.
     private static func drawGeometry(_ props: DrawProps) -> Geometry2d {
+        if props.ink == .marker {
+            // A highlighter is its whole band, so it can be grabbed anywhere on the colour.
+            let outline = MarkerInk.outline(props)
+            if outline.count >= 3 { return Polygon2d(points: outline, isFilled: true) }
+        }
+
         let points = props.points
         let sw = props.strokeWidth + 1
 

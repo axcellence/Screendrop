@@ -62,6 +62,10 @@ struct AnnotationSwatch: Identifiable, Equatable, Hashable {
     static let pink = AnnotationSwatch("pink", title: "Pink", red: 1.0, green: 0.18, blue: 0.43)
     static let white = AnnotationSwatch("white", title: "White", red: 0.96, green: 0.96, blue: 0.96)
 
+    /// The highlighter's default: a lemon yellow that tints paper the way a real marker does.
+    /// Kept out of `allCases` so the shared palette stays as it is.
+    static let markerYellow = AnnotationSwatch("marker-yellow", title: "Highlighter Yellow", red: 1, green: 0.93, blue: 0.2)
+
     static let allCases: [AnnotationSwatch] = [
         .black, .red, .orange, .yellow, .green, .turquoise, .blue, .purple, .pink, .white
     ]

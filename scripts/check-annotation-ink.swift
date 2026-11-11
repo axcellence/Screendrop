@@ -2,7 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-// Checks the hand-drawn shape style against the real annotation engine,
+// Checks the hand-drawn shape style and the highlighter against the real annotation engine,
 // without launching the app:
 //
 // files=(Screendrop/Engine/*.swift)
@@ -290,6 +290,338 @@ struct AnnotationInkChecks {
         expect(triangle.count == 2, "arrow hand-drawn with a triangle head: body plus head")
     }
 
+    // MARK: - Highlighter
+
+    static let markerYellow = AnnotationSwatch("marker-yellow", title: "Yellow", red: 1, green: 0.93, blue: 0.2)
+
+    /// A highlighter stroke through page-space points, as the editor would have recorded it.
+    static func marker(
+        id: String, through pagePoints: [Vec], width: Double = 30, complete: Bool = true,
+        swatch: AnnotationSwatch = markerYellow
+    ) -> AnnoShape {
+        var props = DrawProps()
+        props.ink = .marker
+        props.strokeWidth = width
+        props.swatch = swatch
+        props.isComplete = complete
+        let origin = pagePoints[0]
+        props.points = pagePoints.map { Vec($0.x - origin.x, $0.y - origin.y, 0.5) }
+        return AnnoShape(id: AnnoShapeID(id), x: origin.x, y: origin.y, kind: .draw(props))
+    }
+
+    /// How many separate bumps the right-hand end of a horizontal stroke has, counted across the
+    /// middle of the band where a square corner cannot be mistaken for one.
+    static func bumpsAtRightEnd(_ bitmap: Bitmap, rows: ClosedRange<Int>, searchFrom x0: Int) -> Int {
+        var profile: [Int] = []
+        for y in rows {
+            var rightmost = x0
+            for x in x0..<bitmap.width where bitmap.isInked(x, y) { rightmost = x }
+            profile.append(rightmost)
+        }
+        // Count peaks that stand at least a pixel proud of the dips either side of them.
+        var bumps = 0
+        var low = profile[0]
+        var high = profile[0]
+        var rising = true
+        for value in profile.dropFirst() {
+            if rising {
+                if value > high { high = value }
+                if value <= high - 2 {
+                    if high - low >= 2 { bumps += 1 }
+                    rising = false
+                    low = value
+                }
+            } else {
+                if value < low { low = value }
+                if value >= low + 2 {
+                    rising = true
+                    high = value
+                }
+            }
+        }
+        if rising, high - low >= 2 { bumps += 1 }
+        return bumps
+    }
+
+    static func checkHighlighterModel() {
+        let pen = AnnoShape(id: AnnoShapeID("pen"), x: 0, y: 0, kind: .draw(DrawProps()))
+        let highlight = marker(id: "m", through: swipe(from: Vec(40, 60), to: Vec(340, 60)))
+        expect(pen.tool == .freehand, "a pen stroke still belongs to the freehand tool")
+        expect(highlight.tool == .marker, "a highlighter stroke belongs to the highlighter tool")
+        expect(AnnotationTool.marker.title == "Highlighter", "the highlighter tool is called Highlighter")
+        expect(AnnotationTool.highlight.title == "Highlight", "the spotlight tool keeps its name")
+
+        // Screenshots annotated before the highlighter existed have no ink style on their strokes.
+        // They must still open, as pen strokes.
+        do {
+            var penProps = DrawProps()
+            penProps.points = [Vec(0, 0, 0.5), Vec(10, 4, 0.5)]
+            penProps.isComplete = true
+            let shape = AnnoShape(id: AnnoShapeID("old"), x: 5, y: 6, kind: .draw(penProps))
+            let data = try JSONEncoder().encode(shape)
+
+            func strippingInk(_ value: Any) -> Any {
+                if let dictionary = value as? [String: Any] {
+                    var copy: [String: Any] = [:]
+                    for (key, inner) in dictionary where key != "ink" { copy[key] = strippingInk(inner) }
+                    return copy
+                }
+                if let array = value as? [Any] { return array.map(strippingInk) }
+                return value
+            }
+            let legacy = try JSONSerialization.data(
+                withJSONObject: strippingInk(try JSONSerialization.jsonObject(with: data))
+            )
+            expect(!String(decoding: legacy, as: UTF8.self).contains("\"ink\""), "legacy fixture has no ink key")
+            let decoded = try JSONDecoder().decode(AnnoShape.self, from: legacy)
+            expect(decoded == shape, "a stroke saved without an ink style opens as the same pen stroke")
+
+            let roundTripped = try JSONDecoder().decode(AnnoShape.self, from: JSONEncoder().encode(highlight))
+            expect(roundTripped == highlight, "a highlighter stroke survives saving and reopening")
+        } catch {
+            expect(false, "stroke encoding threw \(error)")
+        }
+    }
+
+    static func checkHighlighterShape() {
+        // Constant width, whatever the speed: unevenly spaced points draw one even band.
+        do {
+            var points = swipe(from: Vec(40, 100), to: Vec(200, 100), step: 2)
+            points += swipe(from: Vec(200, 100), to: Vec(440, 100), step: 24).dropFirst()
+            let bitmap = Bitmap(width: 500, height: 200, background: nil)
+            export([marker(id: "m", through: points, width: 30)], onto: bitmap)
+            var heights: [Int] = []
+            for x in stride(from: 90, through: 390, by: 20) {
+                var height = 0
+                for y in 0..<200 where bitmap.isInked(x, y) { height += 1 }
+                heights.append(height)
+            }
+            expect(heights.allSatisfy { abs($0 - 30) <= 1 },
+                   "highlighter: band is the chosen width along its whole length, got \(heights)")
+        }
+
+        // The marker edge: a finished stroke ends in a scalloped cut, not a round or square cap.
+        do {
+            let points = swipe(from: Vec(40, 100), to: Vec(340, 100))
+            let finished = Bitmap(width: 420, height: 200, background: nil)
+            export([marker(id: "m", through: points, width: 40)], onto: finished)
+            let bumps = bumpsAtRightEnd(finished, rows: 84...116, searchFrom: 300)
+            expect(bumps >= 2, "highlighter: a finished stroke has a scalloped end, found \(bumps) bump(s)")
+
+            // The cut is shallow: it roughens the end without lengthening the stroke noticeably.
+            var rightmost = 0
+            for y in 80...120 { for x in 300..<420 where finished.isInked(x, y) { rightmost = Swift.max(rightmost, x) } }
+            expect(rightmost >= 338 && rightmost <= 340 + 8,
+                   "highlighter: the scalloped end stays at the pointer, reached x=\(rightmost)")
+
+            // While the stroke is still being dragged, its leading end is plain.
+            let dragging = Bitmap(width: 420, height: 200, background: nil)
+            export([marker(id: "m", through: points, width: 40, complete: false)], onto: dragging)
+            let liveBumps = bumpsAtRightEnd(dragging, rows: 84...116, searchFrom: 300)
+            expect(liveBumps <= 1, "highlighter: the leading end is plain while dragging, found \(liveBumps) bump(s)")
+        }
+
+        // Each stroke has its own edge, and keeps it.
+        do {
+            let points = swipe(from: Vec(40, 100), to: Vec(340, 100))
+            expect(samePath(marker(id: "m1", through: points), marker(id: "m1", through: points)),
+                   "highlighter: the same stroke draws identically every time")
+            expect(!samePath(marker(id: "m1", through: points), marker(id: "m2", through: points)),
+                   "highlighter: two strokes have different marker edges")
+        }
+
+        // It can be grabbed anywhere on the band, not just along its centre line.
+        do {
+            let shape = marker(id: "m", through: swipe(from: Vec(40, 100), to: Vec(340, 100)), width: 40)
+            let doc = document([shape])
+            func hit(_ page: Vec) -> Bool {
+                doc.geometry(shape).hitTestPoint(doc.pointInShapeSpace(shape, page), margin: 0, hitInside: shape.isFilled)
+            }
+            expect(hit(Vec(200, 100)), "highlighter: clicking the middle of the band grabs it")
+            expect(hit(Vec(200, 116)), "highlighter: clicking near the band's edge grabs it")
+            expect(!hit(Vec(200, 130)), "highlighter: clicking outside the band misses it")
+            let bounds = doc.pageBounds(shape.id)
+            expect(bounds.map { abs($0.h - 40) <= 3 && $0.w >= 300 } ?? false,
+                   "highlighter: selection frame wraps the whole band, got \(String(describing: bounds))")
+        }
+
+        // A single click leaves a dab rather than nothing or a crash.
+        do {
+            let bitmap = Bitmap(width: 200, height: 200, background: nil)
+            export([marker(id: "dab", through: [Vec(100, 100), Vec(101, 100)], width: 30)], onto: bitmap)
+            expect(bitmap.isInked(100, 100), "highlighter: a tiny stroke still leaves a mark")
+        }
+    }
+
+    /// White paper with a black bar across the top half, standing in for text.
+    static func paper(width: Int = 400, height: Int = 200) -> Bitmap {
+        let bitmap = Bitmap(width: width, height: height, background: .white)
+        bitmap.fillPageRect(CGRect(x: 150, y: 40, width: 60, height: 40), .black)
+        return bitmap
+    }
+
+    static func isYellow(_ p: (r: Double, g: Double, b: Double, a: Double)) -> Bool {
+        p.r > 0.9 && p.g > 0.85 && p.b < 0.8 && p.b > 0.3
+    }
+
+    static func checkHighlighterInk() {
+        let stroke = marker(id: "m", through: swipe(from: Vec(60, 60), to: Vec(340, 60)), width: 30)
+
+        // Exported: the paper is tinted, and the text under the highlight stays as dark as it was.
+        let exported = paper()
+        export([stroke], onto: exported)
+        expect(isYellow(exported.pixel(100, 60)), "highlighter export: paper is tinted yellow, got \(exported.pixel(100, 60))")
+        let text = exported.pixel(180, 60)
+        expect(text.r < 0.08 && text.g < 0.08 && text.b < 0.08,
+               "highlighter export: text under the highlight stays dark, got \(text)")
+        let untouched = exported.pixel(100, 150)
+        expect(untouched.r > 0.99 && untouched.b > 0.99, "highlighter export: paper outside the stroke is untouched")
+
+        // A pen stroke is unaffected by any of this: it still paints over what is beneath it.
+        do {
+            var props = DrawProps()
+            props.strokeWidth = 12
+            props.swatch = .red
+            props.isComplete = true
+            props.points = swipe(from: Vec(0, 0), to: Vec(280, 0)).map { Vec($0.x, $0.y, 0.5) }
+            let penned = paper()
+            export([AnnoShape(id: AnnoShapeID("pen"), x: 60, y: 60, kind: .draw(props))], onto: penned)
+            let over = penned.pixel(180, 60)
+            expect(over.r > 0.9 && over.g < 0.4, "pen: still paints over the text beneath it, got \(over)")
+        }
+
+        // On the canvas the annotation layer is transparent and sits above the screenshot, so the
+        // highlight has to bring the screenshot's own pixels with it. Composited over the
+        // screenshot, the result must match the export.
+        for flipped in [false, true] {
+            let backdrop = paper().image
+            let layer = Bitmap(width: 400, height: 200, background: nil)
+            var transform = layer.pageTransform
+            if flipped {
+                // An NSView-style flipped context: y-down already, so page space maps straight in.
+                layer.context.translateBy(x: 0, y: 200)
+                layer.context.scaleBy(x: 1, y: -1)
+                transform = .identity
+            }
+            let target = AnnoShapeDrawing.Target(
+                transform: transform,
+                pageSize: CGSize(width: 400, height: 200),
+                sample: nil,
+                spotlightClip: nil,
+                isFlippedContext: flipped,
+                backdrop: backdrop
+            )
+            AnnoShapeDrawing.draw(document([stroke]), in: layer.context, target: target)
+
+            let composed = paper()
+            composed.context.draw(layer.image, in: CGRect(x: 0, y: 0, width: 400, height: 200))
+            let name = flipped ? "flipped canvas" : "canvas"
+            for (x, y) in [(100, 60), (180, 60), (180, 52), (100, 150), (180, 100), (300, 66)] {
+                let a = composed.pixel(x, y)
+                let b = exported.pixel(x, y)
+                let same = abs(a.r - b.r) < 0.03 && abs(a.g - b.g) < 0.03 && abs(a.b - b.b) < 0.03
+                expect(same, "highlighter \(name): matches the export at (\(x), \(y)), got \(a) vs \(b)")
+            }
+            expect(layer.pixel(100, 150).a < 0.01, "highlighter \(name): leaves the rest of the layer clear")
+        }
+
+        // Two strokes crossing darken where they meet, like a real marker...
+        do {
+            let across = marker(id: "across", through: swipe(from: Vec(40, 100), to: Vec(360, 100)), width: 30)
+            let down = marker(id: "down", through: swipe(from: Vec(280, 20), to: Vec(280, 180)), width: 30)
+            let bitmap = Bitmap(width: 400, height: 200, background: .white)
+            export([across, down], onto: bitmap)
+            let single = bitmap.pixel(120, 100)
+            let crossing = bitmap.pixel(280, 100)
+            expect(crossing.b < single.b - 0.1,
+                   "highlighter: two strokes darken where they cross, \(crossing.b) vs \(single.b)")
+        }
+
+        // ...but one stroke doubling back over itself stays even.
+        do {
+            var points = swipe(from: Vec(60, 100), to: Vec(340, 100))
+            points += swipe(from: Vec(340, 100), to: Vec(340, 110)).dropFirst()
+            points += swipe(from: Vec(340, 110), to: Vec(120, 110)).dropFirst()
+            let bitmap = Bitmap(width: 400, height: 220, background: .white)
+            export([marker(id: "loop", through: points, width: 30)], onto: bitmap)
+            let once = bitmap.pixel(80, 92)
+            let twice = bitmap.pixel(220, 105)
+            expect(isYellow(twice) && abs(once.b - twice.b) < 0.02 && abs(once.g - twice.g) < 0.02,
+                   "highlighter: a stroke crossing itself stays one even tint, \(once) vs \(twice)")
+        }
+
+        // Highlights sit on the paper, beneath every other annotation.
+        do {
+            var props = GeoProps()
+            props.w = 80
+            props.h = 60
+            props.fill = .solid
+            props.swatch = .blue
+            let box = AnnoShape(id: AnnoShapeID("box"), x: 160, y: 30, kind: .geo(props))
+            let bitmap = Bitmap(width: 400, height: 200, background: .white)
+            // The highlight is added after the box, yet must not tint it.
+            export([box, stroke], onto: bitmap)
+            let onBox = bitmap.pixel(200, 60)
+            expect(abs(onBox.r - 0.18) < 0.03 && abs(onBox.b - 1) < 0.03,
+                   "highlighter: other annotations stay on top of it, got \(onBox)")
+        }
+    }
+
+    /// A dark-mode screenshot: near-black paper with a light bar standing in for text.
+    static func darkPaper(width: Int = 400, height: Int = 200) -> Bitmap {
+        let bitmap = Bitmap(width: width, height: height, background: NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1))
+        bitmap.fillPageRect(CGRect(x: 150, y: 40, width: 60, height: 40), NSColor(srgbRed: 0.92, green: 0.92, blue: 0.92, alpha: 1))
+        return bitmap
+    }
+
+    static func checkHighlighterOnDarkScreenshots() {
+        let stroke = marker(id: "m", through: swipe(from: Vec(60, 60), to: Vec(340, 60)), width: 30)
+
+        // A multiply can only darken, which on a dark screenshot would leave no visible mark. There
+        // the highlight lightens instead: the dark paper takes the colour and light text stays light.
+        let exported = darkPaper()
+        export([stroke], onto: exported, sampling: true)
+        let paperPixel = exported.pixel(100, 60)
+        expect(paperPixel.r > 0.35 && paperPixel.g > 0.3 && paperPixel.b < paperPixel.r - 0.2,
+               "highlighter on dark: the paper visibly takes the colour, got \(paperPixel)")
+        let text = exported.pixel(180, 60)
+        expect(text.r > 0.85 && text.g > 0.85, "highlighter on dark: light text stays light, got \(text)")
+        let untouched = exported.pixel(100, 150)
+        expect(abs(untouched.r - 0.11) < 0.02, "highlighter on dark: paper outside the stroke is untouched")
+
+        // And the canvas agrees with the export there too.
+        let layer = Bitmap(width: 400, height: 200, background: nil)
+        let target = AnnoShapeDrawing.Target(
+            transform: layer.pageTransform,
+            pageSize: CGSize(width: 400, height: 200),
+            sample: nil,
+            spotlightClip: nil,
+            isFlippedContext: false,
+            backdrop: darkPaper().image
+        )
+        AnnoShapeDrawing.draw(document([stroke]), in: layer.context, target: target)
+        let composed = darkPaper()
+        composed.context.draw(layer.image, in: CGRect(x: 0, y: 0, width: 400, height: 200))
+        for (x, y) in [(100, 60), (180, 60), (100, 150), (300, 66)] {
+            let a = composed.pixel(x, y)
+            let b = exported.pixel(x, y)
+            let same = abs(a.r - b.r) < 0.03 && abs(a.g - b.g) < 0.03 && abs(a.b - b.b) < 0.03
+            expect(same, "highlighter on dark canvas: matches the export at (\(x), \(y)), got \(a) vs \(b)")
+        }
+
+        // A light screenshot with a lot of dark text on it is still a light screenshot.
+        do {
+            let busy = Bitmap(width: 400, height: 200, background: .white)
+            for x in stride(from: 60, to: 340, by: 20) {
+                busy.fillPageRect(CGRect(x: x, y: 48, width: 8, height: 24), .black)
+            }
+            export([stroke], onto: busy, sampling: true)
+            let ink = busy.pixel(64, 60)
+            expect(ink.r < 0.08 && ink.g < 0.08, "highlighter: dense dark text on white paper stays dark, got \(ink)")
+            expect(isYellow(busy.pixel(74, 60)), "highlighter: white paper between dense text is still tinted yellow")
+        }
+    }
+
     // MARK: - Editor
 
     /// An editor over a 1800px-wide screenshot shown at half size, with one drag performed.
@@ -314,6 +646,44 @@ struct AnnotationInkChecks {
     }
 
     static func checkEditor() {
+        // Dragging with the highlighter leaves one highlighter stroke, in the highlighter's own
+        // colour and size rather than the pen's, and stays on the tool for the next line.
+        do {
+            let editor = editorAfterDrag(tool: .marker, from: Vec(200, 300), to: Vec(900, 310)) { editor in
+                editor.currentSwatch = .red
+                editor.currentStrokeWidth = 4
+            }
+            let shape = editor.shapes.first
+            expect(editor.shapes.count == 1 && shape?.isMarker == true, "editor: the highlighter tool draws a highlighter stroke")
+            expect(shape?.swatch == .markerYellow, "editor: a new highlight is yellow by default, got \(String(describing: shape?.swatch?.id))")
+            // 24 on the inspector's scale is authored against a 900px image; this one is 1800px.
+            expect(shape?.strokeWidth == 48, "editor: a new highlight uses the highlighter's size, got \(String(describing: shape?.strokeWidth))")
+            expect(shape?.drawProps?.isComplete == true, "editor: lifting the pointer finishes the stroke")
+            expect(editor.tool == .marker, "editor: stays on the highlighter after a stroke")
+        }
+
+        // Its colour and size follow the highlighter's settings.
+        do {
+            let editor = editorAfterDrag(tool: .marker, from: Vec(200, 300), to: Vec(900, 310)) { editor in
+                editor.currentMarkerSwatch = .green
+                editor.currentMarkerWidth = 12
+            }
+            expect(editor.shapes.first?.swatch == .green, "editor: a highlight takes the chosen highlighter colour")
+            expect(editor.shapes.first?.strokeWidth == 24, "editor: a highlight takes the chosen highlighter size")
+        }
+
+        // The pen is unchanged, and does not pick up the highlighter's settings.
+        do {
+            let editor = editorAfterDrag(tool: .freehand, from: Vec(200, 300), to: Vec(900, 310)) { editor in
+                editor.currentSwatch = .red
+                editor.currentStrokeWidth = 4
+                editor.currentMarkerSwatch = .green
+            }
+            let shape = editor.shapes.first
+            expect(shape?.tool == .freehand && shape?.swatch == .red && shape?.strokeWidth == 8,
+                   "editor: the pen still draws a pen stroke in the pen's colour and width")
+        }
+
         // New outlines and lines are hand-drawn unless clean is chosen.
         for tool in [AnnotationTool.rectangle, .ellipse, .arrow, .line] {
             let drawn = editorAfterDrag(tool: tool, from: Vec(200, 300), to: Vec(700, 600))
@@ -340,7 +710,7 @@ struct AnnotationInkChecks {
 
     static func checkPreset() {
         // Preferences saved by a build without these features must still load, with their existing
-        // values intact, and default to hand-drawn shapes.
+        // values intact, and default to hand-drawn shapes and a yellow highlighter.
         let legacy = Data("""
         {"selectedToolRawValue":"arrow","swatchID":"blue","strokeWidth":6,"redactionDensity":0.4,
          "textFontName":"SF Pro","textFontSize":32,"textIsBold":false,"textIsItalic":true,
@@ -351,6 +721,8 @@ struct AnnotationInkChecks {
             expect(preset.selectedTool == .arrow && preset.swatch == .blue && preset.strokeWidth == 6,
                    "preset: existing preferences survive")
             expect(preset.resolvedIsHandDrawn, "preset: shapes default to hand-drawn")
+            expect(preset.resolvedMarkerSwatch == .markerYellow, "preset: the highlighter defaults to yellow")
+            expect(preset.resolvedMarkerWidth == 24, "preset: the highlighter defaults to a medium tip")
         } catch {
             expect(false, "preset: preferences saved before these features failed to load: \(error)")
         }
@@ -358,9 +730,15 @@ struct AnnotationInkChecks {
         // Choices are remembered.
         do {
             var preset = AnnotationStylePreset()
+            preset.selectedToolRawValue = AnnotationTool.marker.rawValue
             preset.isHandDrawn = false
+            preset.markerSwatch = CodableSwatch(swatch: .pink)
+            preset.markerWidth = 32
             let reloaded = try JSONDecoder().decode(AnnotationStylePreset.self, from: JSONEncoder().encode(preset))
+            expect(reloaded.selectedTool == .marker, "preset: the highlighter is remembered as the last tool")
             expect(!reloaded.resolvedIsHandDrawn, "preset: choosing clean is remembered")
+            expect(reloaded.resolvedMarkerSwatch == .pink, "preset: the highlighter colour is remembered")
+            expect(reloaded.resolvedMarkerWidth == 32, "preset: the highlighter size is remembered")
         } catch {
             expect(false, "preset: round trip threw \(error)")
         }
@@ -408,11 +786,59 @@ struct AnnotationInkChecks {
         extremes.append(place(ellipse(id: "x-tiny-e", w: 24, h: 24, strokeWidth: 6, dash: .draw), 100, 700))
         extremes.append(place(rectangle(id: "x-wide", w: 700, h: 40, strokeWidth: 6, dash: .draw), 180, 690))
         sheet("hand-drawn-sizes", extremes, size: CGSize(width: 960, height: 780))
+
+        writeHighlighterSheet(to: directory)
+    }
+
+    /// Highlighter strokes over some real text, the way they are used.
+    static func writeHighlighterSheet(to directory: URL) {
+        let bitmap = Bitmap(width: 1100, height: 520, background: NSColor(white: 0.985, alpha: 1))
+        let lines = [
+            "Good, that makes it simpler: no text detection needed. It's a marker",
+            "passes over, and the wavy ends come from the tip shape rather than",
+            "That leaves one thing your picture can't tell me. The band in it is very",
+            "If your hand drifts up or down partway through a swipe in Shottr, does",
+            "out as a straight band anyway?",
+        ]
+        let font = NSFont.systemFont(ofSize: 26)
+        let graphics = NSGraphicsContext(cgContext: bitmap.context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        for (i, line) in lines.enumerated() {
+            let y = CGFloat(bitmap.height) - 90 - CGFloat(i) * 62
+            (line as NSString).draw(
+                at: CGPoint(x: 60, y: y),
+                withAttributes: [.font: font, .foregroundColor: NSColor(white: 0.15, alpha: 1)]
+            )
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        var wave: [Vec] = []
+        for i in 0...120 {
+            let t = Double(i) / 120
+            wave.append(Vec(60 + 640 * t, 110 + 34 * sin(t * PI2 * 1.6)))
+        }
+        let shapes = [
+            marker(id: "sheet-wave", through: wave, width: 38),
+            marker(id: "sheet-straight", through: swipe(from: Vec(62, 264), to: Vec(360, 262)), width: 38),
+            marker(id: "sheet-green", through: swipe(from: Vec(420, 262), to: Vec(700, 266)), width: 38, swatch: .green),
+            marker(id: "sheet-pink", through: swipe(from: Vec(62, 324), to: Vec(300, 328)), width: 22, swatch: .pink),
+            marker(id: "sheet-blue", through: swipe(from: Vec(340, 326), to: Vec(660, 322)), width: 54, swatch: .blue),
+            marker(id: "sheet-live", through: swipe(from: Vec(62, 388), to: Vec(330, 386)), width: 38, complete: false),
+            marker(id: "sheet-cross-a", through: swipe(from: Vec(780, 120), to: Vec(1040, 120)), width: 38),
+            marker(id: "sheet-cross-b", through: swipe(from: Vec(910, 40), to: Vec(910, 220)), width: 38),
+        ]
+        export(shapes, onto: bitmap)
+        bitmap.writePNG(to: directory.appendingPathComponent("highlighter.png"))
     }
 
     static func main() {
         checkHandDrawnShapes()
         checkHandDrawnArrows()
+        checkHighlighterModel()
+        checkHighlighterShape()
+        checkHighlighterInk()
+        checkHighlighterOnDarkScreenshots()
         checkEditor()
         checkPreset()
 

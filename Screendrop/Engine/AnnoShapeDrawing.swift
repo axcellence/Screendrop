@@ -10,10 +10,11 @@ import Foundation
 /// and the resolution of the screenshot they hand over - which is what makes the preview a true
 /// reduction of the export rather than a second implementation that happens to agree.
 ///
-/// Three passes, in this order:
-///  1. Redactions, which transform screenshot pixels and so must sit under everything.
-///  2. The spotlight: one dimming layer over the image with a hole punched per highlight shape.
-///  3. Every other shape, in z-order.
+/// Four passes, in this order:
+///  1. Highlighter strokes, which tint the screenshot itself and so sit on the paper.
+///  2. Redactions, which transform screenshot pixels and so must sit under everything else.
+///  3. The spotlight: one dimming layer over the image with a hole punched per highlight shape.
+///  4. Every other shape, in z-order.
 enum AnnoShapeDrawing {
     /// Everything a draw needs to know about where the page sits and what it is drawn over.
     struct Target {
@@ -34,6 +35,11 @@ enum AnnoShapeDrawing {
         /// flipped case has to invert it back.
         var isFlippedContext = false
         var redactionPreviewCache: AnnoRedactionPreviewCache? = nil
+        /// The screenshot itself, covering exactly the page, when the context being drawn into
+        /// does not already contain it. The canvas's annotation layer is transparent and floats
+        /// above the screenshot, so ink that blends with what is beneath it has to bring those
+        /// pixels along; the exporter draws straight onto the composed image and passes `nil`.
+        var backdrop: CGImage? = nil
 
         var pageRect: CGRect { CGRect(origin: .zero, size: pageSize) }
     }
@@ -50,15 +56,139 @@ enum AnnoShapeDrawing {
     ) {
         let shapes = document.shapes.filter { !skipped.contains($0.id) }
 
+        // Before the redactions, so a blur laid over a highlight still hides what is under it.
+        for shape in shapes where shape.isMarker {
+            drawMarker(shape, document: document, in: context, target: target)
+        }
+
         for shape in shapes where shape.isRedaction {
             drawRedaction(shape, document: document, in: context, target: target)
         }
 
         drawSpotlight(shapes.filter { $0.isHighlight }, in: context, target: target)
 
-        for shape in shapes where !shape.isRedaction && !shape.isHighlight {
+        for shape in shapes where !shape.isRedaction && !shape.isHighlight && !shape.isMarker {
             drawShape(shape, document: document, in: context, target: target)
         }
+    }
+
+    // MARK: - Highlighter
+
+    /// Highlighter ink tints what is beneath it without covering it. On a light screenshot it is
+    /// multiplied, so paper takes the colour and text stays as dark as it was. A multiply can only
+    /// darken, which would leave no mark at all on a dark screenshot, so there it is screened
+    /// instead: the dark paper takes the colour and light text stays light.
+    ///
+    /// The exporter's context already holds the screenshot, so the blend applies directly. The
+    /// canvas's layer is transparent with the screenshot in a separate view underneath, where a
+    /// blend would have nothing to work on - so the screenshot's own pixels are drawn into the
+    /// stroke first, and the two layers composite to the same picture the export produces.
+    private static func drawMarker(
+        _ shape: AnnoShape,
+        document: AnnoDocument,
+        in context: CGContext,
+        target: Target
+    ) {
+        var toContext = shape.pageTransform.cgAffineTransform.concatenating(target.transform)
+
+        for element in document.renderElements(shape.id) {
+            guard case let .path(localPath) = element.content, let fill = element.fill,
+                  let path = localPath.copy(using: &toContext) else { continue }
+            let bounds = path.boundingBoxOfPath
+            let backdrop = target.backdrop.flatMap { backdropCrop($0, under: bounds, target: target) }
+
+            // What the stroke is going over: the screenshot on the canvas, the composed image in
+            // an export.
+            let beneath = backdrop?.image ?? target.sample?(bounds.integral)
+            let isOnDark = beneath.flatMap(meanLuminance).map { $0 < darkBackdropLuminance } ?? false
+
+            context.saveGState()
+            if let backdrop {
+                context.saveGState()
+                context.addPath(path)
+                context.clip()
+                context.interpolationQuality = .high
+                if target.isFlippedContext {
+                    context.translateBy(x: 0, y: backdrop.destination.midY)
+                    context.scaleBy(x: 1, y: -1)
+                    context.translateBy(x: 0, y: -backdrop.destination.midY)
+                }
+                context.draw(backdrop.image, in: backdrop.destination)
+                context.restoreGState()
+            }
+            context.setBlendMode(isOnDark ? .screen : .multiply)
+            // Screening adds light, which reads stronger than the same tint multiplied in.
+            context.setAlpha(shape.opacity * (isOnDark ? 0.7 : 1))
+            context.addPath(path)
+            context.setFillColor(fill.cgColor)
+            context.fillPath(using: .winding)
+            context.restoreGState()
+        }
+    }
+
+    /// Below this average brightness the area under a highlight counts as a dark screenshot. Dark
+    /// text on white paper sits well above it however dense the text is.
+    private static let darkBackdropLuminance = 0.4
+
+    /// The part of the screenshot that lies under a context-space rect, and exactly where the
+    /// screenshot view shows it. The crop is taken on whole source pixels and placed back on those
+    /// same pixels, so text under a highlight lines up with the text around it.
+    private static func backdropCrop(
+        _ backdrop: CGImage,
+        under contextRect: CGRect,
+        target: Target
+    ) -> (image: CGImage, destination: CGRect)? {
+        guard target.pageSize.width > 0, target.pageSize.height > 0 else { return nil }
+        let pageRect = contextRect.applying(target.transform.inverted())
+        // The preview image can be a downscaled copy of the page.
+        let sx = CGFloat(backdrop.width) / target.pageSize.width
+        let sy = CGFloat(backdrop.height) / target.pageSize.height
+        let pixels = CGRect(
+            x: pageRect.minX * sx, y: pageRect.minY * sy,
+            width: pageRect.width * sx, height: pageRect.height * sy
+        )
+        .insetBy(dx: -1, dy: -1)
+        .integral
+        .intersection(CGRect(x: 0, y: 0, width: backdrop.width, height: backdrop.height))
+        guard pixels.width >= 1, pixels.height >= 1, let crop = backdrop.cropping(to: pixels) else { return nil }
+
+        let destination = CGRect(
+            x: pixels.minX / sx, y: pixels.minY / sy,
+            width: pixels.width / sx, height: pixels.height / sy
+        ).applying(target.transform)
+        return (crop, destination)
+    }
+
+    /// Average brightness of an image, 0...1, ignoring anything transparent. `nil` when there is
+    /// nothing opaque to measure.
+    private static func meanLuminance(of image: CGImage) -> Double? {
+        let side = 8
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn: Bool = pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: side,
+                height: side,
+                bitsPerComponent: 8,
+                bytesPerRow: side * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.interpolationQuality = .medium
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return nil }
+
+        var light = 0.0
+        var coverage = 0.0
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            // Premultiplied, so summing the channels already weights each pixel by its alpha.
+            light += 0.299 * Double(pixels[i]) + 0.587 * Double(pixels[i + 1]) + 0.114 * Double(pixels[i + 2])
+            coverage += Double(pixels[i + 3])
+        }
+        guard coverage > 0.05 * 255 * Double(side * side) else { return nil }
+        return light / coverage
     }
 
     // MARK: - One shape
