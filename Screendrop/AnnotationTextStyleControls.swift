@@ -30,7 +30,8 @@ struct AnnotationTextStyleControls: View {
                     isSelected: { segment in
                         switch segment {
                         case .bold: model.selectedTextIsBold
-                        case .italic: model.selectedTextIsItalic
+                        // Handwriting has no italic and draws upright, so don't show it as on.
+                        case .italic: model.selectedTextIsItalic && model.selectedTextFontFamily.supportsItalic
                         case .underline: model.selectedTextIsUnderline
                         }
                     },
@@ -40,6 +41,9 @@ struct AnnotationTextStyleControls: View {
                         case .italic: model.selectedTextIsItalic.toggle()
                         case .underline: model.selectedTextIsUnderline.toggle()
                         }
+                    },
+                    isEnabled: { segment in
+                        segment != .italic || model.selectedTextFontFamily.supportsItalic
                     },
                     label: { segment in
                         Text(segment.title)

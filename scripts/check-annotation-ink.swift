@@ -2,8 +2,8 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-// Checks the hand-drawn shape style and the highlighter against the real annotation engine,
-// without launching the app:
+// Checks the hand-drawn shape style, the highlighter and Handwriting text against the real
+// annotation engine, without launching the app:
 //
 // files=(Screendrop/Engine/*.swift)
 // files=(${files:#*AnnoCanvasLayerView.swift}); files=(${files:#*AnnoTextEditorOverlay.swift})
@@ -14,7 +14,9 @@ import Foundation
 //   Screendrop/BoundedCGImageCache.swift scripts/check-annotation-ink.swift \
 //   -o /tmp/screendrop-ink-check && /tmp/screendrop-ink-check
 //
-// Pass a directory as the first argument to also write PNG contact sheets there.
+// Run it from the repository root: it points the engine at `Screendrop/Fonts` for Caveat, which
+// the app reads from its bundle. Pass a directory as the first argument to also write PNG contact
+// sheets there.
 @main
 struct AnnotationInkChecks {
     static var checks = 0
@@ -744,6 +746,145 @@ struct AnnotationInkChecks {
         }
     }
 
+    // MARK: - Handwriting text
+
+    static func text(
+        _ string: String, family: AnnoFontFamily = .handwriting, size: Double = 48, bold: Bool = true,
+        italic: Bool = false, underline: Bool = false, wrapWidth: Double? = nil
+    ) -> TextProps {
+        var props = TextProps()
+        props.text = string
+        props.fontSize = size
+        props.fontFamily = family
+        props.isBold = bold
+        props.isItalic = italic
+        props.isUnderline = underline
+        if let wrapWidth {
+            props.autoSize = false
+            props.w = wrapWidth
+        }
+        return props
+    }
+
+    static let descenders = "Left alignment gets messy (jpg)"
+
+    static func checkHandwritingFirstUseOffMain() {
+        // Exports lay text out on a detached task, so the font may be loaded there first.
+        var family: String?
+        DispatchQueue.global().sync {
+            family = HandwritingFont.font(size: 30, isBold: true)?.familyName
+        }
+        expect(family == "Caveat", "handwriting: Caveat loads off the main thread (got \(family ?? "nil"))")
+    }
+
+    static func checkHandwritingText() {
+        let bold = TextMeasure.font(text(descenders))
+        let regular = TextMeasure.font(text(descenders, bold: false))
+        expect(bold.familyName == "Caveat", "handwriting: bold resolves to Caveat, not \(bold.familyName ?? "nil")")
+        expect(regular.familyName == "Caveat", "handwriting: regular resolves to Caveat, not \(regular.familyName ?? "nil")")
+        expect(TextMeasure.font(text(descenders, family: .pro)).familyName != "Caveat",
+               "handwriting: SF Pro text is still SF Pro")
+        expect(AnnoFontFamily.allCases.last == .handwriting && AnnoFontFamily.handwriting.title == "Handwriting",
+               "handwriting: listed as Handwriting after the SF faces")
+
+        // Weight follows Bold.
+        let boldPath = TextMeasure.glyphPath(text(descenders))
+        let regularPath = TextMeasure.glyphPath(text(descenders, bold: false))
+        expect(boldPath != regularPath, "handwriting: bold and regular draw different outlines")
+        func ink(_ path: CGPath) -> Int {
+            let bitmap = Bitmap(width: 900, height: 120, background: nil)
+            bitmap.context.concatenate(bitmap.pageTransform)
+            bitmap.context.addPath(path)
+            bitmap.context.fillPath()
+            return bitmap.inkedPixelCount
+        }
+        let boldInk = ink(boldPath), regularInk = ink(regularPath)
+        expect(Double(boldInk) > Double(regularInk) * 1.15,
+               "handwriting: bold carries more ink than regular (\(boldInk) vs \(regularInk))")
+
+        // No italic: the outline stays upright, with no synthesised slant.
+        let italic = TextMeasure.font(text(descenders, italic: true))
+        expect(TextMeasure.glyphPath(text(descenders, italic: true)) == boldPath
+               && TextMeasure.glyphPath(text(descenders, bold: false, italic: true)) == regularPath,
+               "handwriting: italic leaves the outline upright")
+        expect(italic.familyName == "Caveat" && CTFontGetMatrix(italic as CTFont) == .identity,
+               "handwriting: italic is still unslanted Caveat")
+        expect(!AnnoFontFamily.handwriting.supportsItalic && AnnoFontFamily.pro.supportsItalic,
+               "handwriting: the Italic toggle is off only for Handwriting")
+
+        // Caveat's tall ascenders and long descenders fit the pinned line box, so nothing clips.
+        // Sideways, a handwritten stroke can run a little past its advance (as SF's "j" does on
+        // the left); text isn't clipped to its box, so allow a sliver of the font size there.
+        for size in [14.0, 48, 120] {
+            for isBold in [true, false] {
+                for underline in [false, true] {
+                    for wrap in [nil, size * 6] as [Double?] {
+                        let props = text(descenders, size: size, bold: isBold, underline: underline, wrapWidth: wrap)
+                        let box = CGRect(origin: .zero, size: TextMeasure.measure(props))
+                        let glyphs = TextMeasure.glyphPath(props).boundingBoxOfPath
+                        let label = "size \(size), \(isBold ? "bold" : "regular")\(underline ? ", underlined" : "")\(wrap == nil ? "" : ", wrapped")"
+                        let slack = size * 0.15
+                        expect(!glyphs.isEmpty && glyphs.minY >= box.minY && glyphs.maxY <= box.maxY
+                               && glyphs.minX >= box.minX - slack && glyphs.maxX <= box.maxX + slack,
+                               "handwriting: glyphs \(glyphs) fit the measured box \(box) (\(label))")
+                    }
+                }
+            }
+        }
+
+        // Wrapping into a narrow box makes it taller than one line.
+        let oneLine = TextMeasure.measure(text(descenders))
+        let wrapped = TextMeasure.measure(text(descenders, wrapWidth: 260))
+        expect(wrapped.width == 260 && wrapped.height > TextMeasure.lineHeight(text(descenders)) * 1.5,
+               "handwriting: a wrapped box (\(wrapped)) is taller than one line (\(oneLine))")
+
+        // The text view lays out at view scale with the page size as the optical size; it must pick
+        // the same face and weight, scaled, or the text jumps when editing ends.
+        for isBold in [true, false] {
+            let page = text(descenders, size: 32, bold: isBold)
+            var view = page
+            view.fontSize = 32 * 2.5
+            let pageFont = TextMeasure.font(page)
+            let viewFont = TextMeasure.font(view, opticalSize: page.fontSize)
+            let pageVariation = CTFontCopyVariation(pageFont as CTFont) as? [NSNumber: NSNumber]
+            let viewVariation = CTFontCopyVariation(viewFont as CTFont) as? [NSNumber: NSNumber]
+            expect(viewFont.fontName == pageFont.fontName && viewVariation == pageVariation,
+                   "handwriting: the editing text view uses the committed face (\(viewFont.fontName) vs \(pageFont.fontName))")
+            let pageWidth = TextMeasure.measure(page).width
+            let viewWidth = TextMeasure.measure(view).width
+            expect(abs(viewWidth / 2.5 - pageWidth) <= 2,
+                   "handwriting: the box scales with zoom (\(viewWidth / 2.5) vs \(pageWidth))")
+        }
+    }
+
+    /// Run as a child with no font file: Handwriting falls back to SF Pro and still draws.
+    static func checkHandwritingFallback() -> Never {
+        let props = text(descenders)
+        let font = TextMeasure.font(props)
+        let fallback = TextMeasure.font(text(descenders, family: .pro))
+        let path = TextMeasure.glyphPath(props)
+        let ok = font.fontName == fallback.fontName && !path.boundingBoxOfPath.isEmpty
+        print(ok ? "fallback ok: \(font.fontName)" : "fallback FAILED: \(font.fontName)")
+        exit(ok ? 0 : 1)
+    }
+
+    static func checkHandwritingFallbackInChild() {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+        var environment = ProcessInfo.processInfo.environment
+        environment[HandwritingFont.directoryEnvironmentKey] = "/nonexistent"
+        environment["SCREENDROP_CHECK_FALLBACK"] = "1"
+        child.environment = environment
+        child.standardOutput = FileHandle.nullDevice
+        do {
+            try child.run()
+            child.waitUntilExit()
+            expect(child.terminationStatus == 0, "handwriting: without the font file, text falls back to SF Pro")
+        } catch {
+            expect(false, "handwriting: fallback child failed to start: \(error)")
+        }
+    }
+
     // MARK: - Contact sheet
 
     static func writeSheets(to directory: URL) {
@@ -788,6 +929,42 @@ struct AnnotationInkChecks {
         sheet("hand-drawn-sizes", extremes, size: CGSize(width: 960, height: 780))
 
         writeHighlighterSheet(to: directory)
+        writeHandwritingSheet(to: directory)
+    }
+
+    /// Handwriting text, regular and bold, with each measured box outlined to show nothing clips.
+    static func writeHandwritingSheet(to directory: URL) {
+        let bitmap = Bitmap(width: 1300, height: 720, background: NSColor(white: 0.98, alpha: 1))
+        var shapes: [AnnoShape] = []
+        var y = 30.0
+        let rows: [(TextProps, Double)] = [
+            (text(descenders, size: 64, bold: false), 40),
+            (text(descenders, size: 64), 40),
+            (text("Regular, underlined: quick brown fox", size: 40, bold: false, underline: true), 40),
+            (text("Bold, underlined: quick brown fox", size: 40, underline: true), 40),
+            (text("Small regular 18 pt: Hyphy jumps (gq)", size: 18, bold: false), 40),
+            (text("Small bold 18 pt: Hyphy jumps (gq)", size: 18), 40),
+            (text("A wrapped note in bold that runs over several lines, with descenders: jpgqy",
+                  size: 44, wrapWidth: 520), 40),
+        ]
+        for (i, (props, x)) in rows.enumerated() {
+            var props = props
+            props.swatch = i.isMultiple(of: 2) ? .red : .blue
+            let box = TextMeasure.measure(props)
+            bitmap.context.setStrokeColor(NSColor(white: 0.75, alpha: 1).cgColor)
+            bitmap.context.setLineWidth(1)
+            bitmap.context.stroke(CGRect(x: x, y: y, width: box.width, height: box.height)
+                .applying(bitmap.pageTransform).insetBy(dx: -0.5, dy: -0.5))
+            shapes.append(AnnoShape(id: AnnoShapeID("hw-\(i)"), x: x, y: y, kind: .text(props)))
+            y += box.height + 24
+        }
+        var wrappedRegular = text("The same note in regular that runs over several lines, with descenders: jpgqy",
+                                  size: 44, bold: false, wrapWidth: 520)
+        wrappedRegular.swatch = .blue
+        shapes.append(AnnoShape(id: AnnoShapeID("hw-wrap-regular"), x: 820, y: y - TextMeasure.measure(rows.last!.0).height - 24,
+                                kind: .text(wrappedRegular)))
+        export(shapes, onto: bitmap)
+        bitmap.writePNG(to: directory.appendingPathComponent("handwriting.png"))
     }
 
     /// Highlighter strokes over some real text, the way they are used.
@@ -833,6 +1010,11 @@ struct AnnotationInkChecks {
     }
 
     static func main() {
+        if ProcessInfo.processInfo.environment["SCREENDROP_CHECK_FALLBACK"] != nil { checkHandwritingFallback() }
+        // The app finds Caveat in its bundle; this binary isn't in one.
+        setenv(HandwritingFont.directoryEnvironmentKey, "Screendrop/Fonts", 0)
+        checkHandwritingFirstUseOffMain()
+
         checkHandDrawnShapes()
         checkHandDrawnArrows()
         checkHighlighterModel()
@@ -841,6 +1023,8 @@ struct AnnotationInkChecks {
         checkHighlighterOnDarkScreenshots()
         checkEditor()
         checkPreset()
+        checkHandwritingText()
+        checkHandwritingFallbackInChild()
 
         if CommandLine.arguments.count > 1 {
             writeSheets(to: URL(fileURLWithPath: CommandLine.arguments[1]))
