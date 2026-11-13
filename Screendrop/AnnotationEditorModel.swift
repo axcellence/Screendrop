@@ -73,6 +73,7 @@ final class AnnotationEditorModel {
     /// hold these rather than the live shapes, so it never resizes under the pointer.
     private(set) var committedAnnotationExtents: [AnnotationInkExtent] = []
     @ObservationIgnored private var measuredShapes: [AnnoShape] = []
+    @ObservationIgnored private var isBeginningInteraction = false
     @ObservationIgnored private var matchedEdgeColorCache: (url: URL, color: CGColor)?
 
     // MARK: Zoom & pan
@@ -385,8 +386,11 @@ final class AnnotationEditorModel {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
         // Every tool works anywhere: the canvas grows to hold what is drawn
-        // outside it once the gesture ends.
+        // outside it once the gesture ends. A press that commits text waits
+        // too, so the canvas does not resize under the drag it starts.
+        isBeginningInteraction = true
         engine.pointerDown(pointer(at: location))
+        isBeginningInteraction = false
         selectedTool = engine.tool
         syncStyleFromSelection()
     }
@@ -988,7 +992,7 @@ extension AnnotationEditorModel {
     /// Takes the shapes' new extent once nothing is being dragged or typed, so the canvas resizes
     /// when the pointer lets go. Undo, delete, paste, nudges and loading all land here too.
     func settleCanvasExtents() {
-        guard case .idle = engine.interaction, engine.editingTextId == nil else { return }
+        guard !isBeginningInteraction, case .idle = engine.interaction, engine.editingTextId == nil else { return }
         let shapes = engine.shapes
         guard shapes != measuredShapes else { return }
         measuredShapes = shapes
