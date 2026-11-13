@@ -212,25 +212,13 @@ extension AnnoEditor {
         case let .translating(origin, initial):
             translate(origin: origin, initial: initial, pointer: pointer)
         case let .resizing(handle, bounds, initial):
-            resize(handle: handle, bounds: bounds, initial: initial, pointer: limited(pointer))
+            resize(handle: handle, bounds: bounds, initial: initial, pointer: pointer)
         case let .rotating(center, startAngle, initial):
             rotate(center: center, startAngle: startAngle, initial: initial, pointer: pointer)
         case let .draggingArrowHandle(id, handle):
-            dragArrowHandle(id: id, handle: handle, pointer: limited(pointer))
+            dragArrowHandle(id: id, handle: handle, pointer: pointer)
         }
         notifyChanged()
-    }
-
-    /// The pointer held inside `pageLimits`, so an edge or handle being
-    /// dragged stops at the boundary.
-    private func limited(_ pointer: PointerInfo) -> PointerInfo {
-        guard let limits = pageLimits else { return pointer }
-        var pointer = pointer
-        pointer.pagePoint = Vec(
-            Swift.min(Swift.max(pointer.pagePoint.x, limits.minX), limits.maxX),
-            Swift.min(Swift.max(pointer.pagePoint.y, limits.minY), limits.maxY)
-        )
-        return pointer
     }
 
     // MARK: - Up
@@ -450,20 +438,6 @@ extension AnnoEditor {
         if pointer.shift {
             // Lock to whichever axis has moved further.
             if abs(dx) > abs(dy) { dy = 0 } else { dx = 0 }
-        }
-        // Keep the whole selection inside the limits. Its box where the
-        // move began is today's box less however far it has moved so far.
-        if let limits = pageLimits,
-           let (firstID, firstStart) = initial.first,
-           let first = document.shape(firstID) {
-            let boxes = initial.keys.compactMap { document.pageBounds($0) }
-            if !boxes.isEmpty {
-                let current = Box.common(boxes)
-                let startX = current.x - (first.x - firstStart.x)
-                let startY = current.y - (first.y - firstStart.y)
-                dx = Swift.max(limits.minX - startX, Swift.min(dx, limits.maxX - startX - current.w))
-                dy = Swift.max(limits.minY - startY, Swift.min(dy, limits.maxY - startY - current.h))
-            }
         }
         for (id, start) in initial {
             document.update(id) { shape in

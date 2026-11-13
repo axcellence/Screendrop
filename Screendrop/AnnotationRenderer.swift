@@ -85,12 +85,21 @@ enum AnnotationRenderer {
             // wide-gamut colors survive the export instead of being pulled
             // down to device RGB. Previews already render this way.
             let colorSpace = exportColorSpace(for: sourceImage)
+            let contentSize = CGSize(width: sourceImage.width, height: sourceImage.height)
+            let annotationExtents = AnnotationCanvasGrowth.extents(of: shapes)
+            let isGrown = AnnotationBackgroundLayout.make(
+                contentSize: contentSize,
+                settings: backgroundSettings,
+                annotationExtents: annotationExtents
+            ).isGrown
             let renderedImage: CGImage
-            if backgroundSettings.hasRenderableContent {
+            if backgroundSettings.hasRenderableContent || isGrown {
                 renderedImage = try AnnotationBackgroundRenderer.compose(
                     contentImage: sourceImage,
                     settings: backgroundSettings,
                     colorSpace: colorSpace,
+                    annotationExtents: annotationExtents,
+                    extensionFill: isGrown ? extensionFill(for: backgroundSettings, sourceImage: sourceImage) : nil,
                     foregroundOverlay: { context, layout, imageRect, imageClipPath in
                         drawAnnotations(
                             shapes,
@@ -141,6 +150,16 @@ enum AnnotationRenderer {
             }
         }
 
+    }
+
+    /// What fills room grown for annotations when there is no background: the screenshot's own
+    /// edge colour.
+    nonisolated static func extensionFill(
+        for settings: AnnotationBackgroundSettings,
+        sourceImage: CGImage
+    ) -> CGColor? {
+        guard settings.style == .none else { return nil }
+        return AnnotationEdgeColor.match(sourceImage)
     }
 
     nonisolated private static func loadSourceImage(sourceURL: URL) throws -> CGImage {

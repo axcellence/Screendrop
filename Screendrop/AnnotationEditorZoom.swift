@@ -2,7 +2,7 @@ import CoreGraphics
 
 extension AnnotationEditorModel {
     var canvasPixelSize: CGSize {
-        AnnotationBackgroundLayout.make(contentSize: imageSize, settings: backgroundSettings).canvasSize
+        canvasLayout.canvasSize
     }
 
     var zoomPercent: Int { canvasViewport.zoomPercent }
@@ -14,7 +14,7 @@ extension AnnotationEditorModel {
     /// Where the image sits in the viewport right now, in viewport points.
     var displayedImageFrame: CGRect? {
         guard canvasViewport.layout != nil else { return nil }
-        return AnnotationBackgroundLayout.make(contentSize: imageSize, settings: backgroundSettings)
+        return canvasLayout
             .scaled(to: canvasViewport.frame)
             .imageFrame
     }
@@ -23,7 +23,7 @@ extension AnnotationEditorModel {
     /// layout without the crop handle margin, then asks the canvas to animate
     /// to the fit. A crop thereby grows out of the box it was cut from.
     func revealCanvasLeavingCrop(imageAt imageRect: CGRect?) {
-        let background = AnnotationBackgroundLayout.make(contentSize: imageSize, settings: backgroundSettings)
+        let background = canvasLayout
         guard let imageRect, var layout = canvasViewport.layout,
               background.imageRect.width > 0 else {
             resetZoom()

@@ -151,11 +151,6 @@ final class AnnoEditor {
     var editingTextId: AnnoShapeID?
     var onEditingTextChanged: ((AnnoShapeID?) -> Void)?
 
-    /// The part of page space an export contains: the image, or the whole
-    /// canvas when it has a background. Shapes are kept inside it while
-    /// they are moved, resized or reshaped. `nil` leaves them free.
-    var pageLimits: Box?
-
     private(set) var interaction: AnnoInteraction = .idle
     /// The brush rectangle while box-selecting, in page space.
     private(set) var brush: Box?
@@ -303,17 +298,6 @@ final class AnnoEditor {
 
     func nudgeSelected(dx: Double, dy: Double) {
         guard !selectedIds.isEmpty else { return }
-        var dx = dx
-        var dy = dy
-        // Arrow keys stop at the boundary too.
-        if let limits = pageLimits {
-            let boxes = selectedIds.compactMap { document.pageBounds($0) }
-            if !boxes.isEmpty {
-                let box = Box.common(boxes)
-                dx = Swift.max(limits.minX - box.minX, Swift.min(dx, limits.maxX - box.maxX))
-                dy = Swift.max(limits.minY - box.minY, Swift.min(dy, limits.maxY - box.maxY))
-            }
-        }
         guard dx != 0 || dy != 0 else { return }
         markUndo()
         for id in selectedIds {
