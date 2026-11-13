@@ -465,7 +465,8 @@ struct AnnotationCanvas: View {
                 sourceImage: model.previewCGImage,
                 imageFrame: imageFrame,
                 imageSize: model.imageSize,
-                revision: model.revision
+                revision: model.revision,
+                surround: model.extensionFillColor
             )
             // Hit testing is declined everywhere except the text caret, so the drag gesture that
             // drives the engine still receives everything else.
@@ -804,6 +805,7 @@ private struct AnimatedAnnoCanvasLayer: View, Animatable {
     var imageFrame: CGRect
     let imageSize: CGSize
     let revision: Int
+    let surround: CGColor?
 
     var animatableData: CGRect.AnimatableData {
         get { imageFrame.animatableData }
@@ -817,7 +819,8 @@ private struct AnimatedAnnoCanvasLayer: View, Animatable {
             imageFrame: imageFrame,
             imageSize: imageSize,
             spotlightClip: nil,
-            revision: revision
+            revision: revision,
+            surround: surround
         )
     }
 }
