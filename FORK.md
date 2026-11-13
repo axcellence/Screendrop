@@ -1,6 +1,6 @@
 # This fork
 
-A personal fork of [fayazara/Screendrop](https://github.com/fayazara/Screendrop) with three additions
+A personal fork of [fayazara/Screendrop](https://github.com/fayazara/Screendrop) with four additions
 to the screenshot editor. Everything else is the original app.
 
 ## What is different
@@ -15,9 +15,16 @@ to the screenshot editor. Everything else is the original app.
 - **Handwriting text.** A fourth font, Handwriting (Caveat, a marker hand), after the SF faces. It
   ships inside the app with its licence, so it looks the same on any Mac. Bold switches its weight;
   it has no italic. It is the default for new text and the choice is remembered.
+- **Notes beside the screenshot.** Anything drawn past the screenshot's edge, such as an arrow out
+  to a note, makes the canvas grow to hold it with a little room to spare, and the room goes again
+  when the shape is moved back or deleted. With a background the background extends; without one
+  the new space takes the screenshot's own edge colour (white when the edge is busy or
+  see-through), and **Extra space** in the inspector picks another colour.
 
 A screenshot that uses the highlighter or Handwriting text will not reopen for editing in the
-official app; the exported image is unaffected.
+official app; the exported image is unaffected. A screenshot saved with notes outside the image
+reopens there with the canvas back at the screenshot's size, so exporting it again from the
+official app cuts those notes off.
 
 ## How it is set up
 
@@ -51,6 +58,8 @@ scripts/install-fork.sh
 
 ## Check the drawing code
 
-There is no test target. The three features are covered by a standalone check that compiles the real
+There is no test target. The drawing features are covered by a standalone check that compiles the real
 annotation engine; the command is in the header of `scripts/check-annotation-ink.swift`. Pass it a
-directory to also write PNG contact sheets of every shape and stroke, and of Handwriting text.
+directory to also write PNG contact sheets of every shape and stroke, and of Handwriting text. The
+growing canvas has its own check beside it, `scripts/check-canvas-growth.swift`, which renders real
+exports.
