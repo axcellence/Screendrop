@@ -40,6 +40,9 @@ enum AnnoShapeDrawing {
         /// above the screenshot, so ink that blends with what is beneath it has to bring those
         /// pixels along; the exporter draws straight onto the composed image and passes `nil`.
         var backdrop: CGImage? = nil
+        /// The flat fill around the page, when the canvas has grown past the screenshot with no
+        /// background. Ink that blends with what is beneath it needs this alongside `backdrop`.
+        var surround: CGColor? = nil
 
         var pageRect: CGRect { CGRect(origin: .zero, size: pageSize) }
     }
@@ -100,9 +103,16 @@ enum AnnoShapeDrawing {
             // What the stroke is going over: the screenshot on the canvas, the composed image in
             // an export.
             let beneath = backdrop?.image ?? target.sample?(bounds.integral)
-            let isOnDark = beneath.flatMap(meanLuminance).map { $0 < darkBackdropLuminance } ?? false
+            let isOnDark = (beneath.flatMap(meanLuminance) ?? target.surround.flatMap(luminance))
+                .map { $0 < darkBackdropLuminance } ?? false
 
             context.saveGState()
+            if target.backdrop != nil, let surround = target.surround {
+                // Beyond the screenshot the stroke goes over the grown fill, as in the export.
+                context.addPath(path)
+                context.setFillColor(surround)
+                context.fillPath(using: .winding)
+            }
             if let backdrop {
                 context.saveGState()
                 context.addPath(path)
@@ -157,6 +167,13 @@ enum AnnoShapeDrawing {
             width: pixels.width / sx, height: pixels.height / sy
         ).applying(target.transform)
         return (crop, destination)
+    }
+
+    private static func luminance(of color: CGColor) -> Double? {
+        guard let srgb = CGColorSpace(name: CGColorSpace.sRGB),
+              let converted = color.converted(to: srgb, intent: .defaultIntent, options: nil),
+              let c = converted.components, c.count >= 3 else { return nil }
+        return 0.299 * Double(c[0]) + 0.587 * Double(c[1]) + 0.114 * Double(c[2])
     }
 
     /// Average brightness of an image, 0...1, ignoring anything transparent. `nil` when there is

@@ -17,6 +17,8 @@ struct AnnoCanvasLayer: NSViewRepresentable {
     let spotlightClip: CGPath?
     /// Bumped by the model on every change, so SwiftUI knows to push a redraw through.
     let revision: Int
+    /// The fill around the screenshot when the canvas has grown with no background.
+    var surround: CGColor? = nil
 
     func makeNSView(context: Context) -> AnnoCanvasNSView {
         let view = AnnoCanvasNSView()
@@ -25,7 +27,8 @@ struct AnnoCanvasLayer: NSViewRepresentable {
             sourceImage: sourceImage,
             imageFrame: imageFrame,
             imageSize: imageSize,
-            spotlightClip: spotlightClip
+            spotlightClip: spotlightClip,
+            surround: surround
         )
         return view
     }
@@ -36,7 +39,8 @@ struct AnnoCanvasLayer: NSViewRepresentable {
             sourceImage: sourceImage,
             imageFrame: imageFrame,
             imageSize: imageSize,
-            spotlightClip: spotlightClip
+            spotlightClip: spotlightClip,
+            surround: surround
         )
     }
 
@@ -52,6 +56,7 @@ final class AnnoCanvasNSView: NSView {
     private var imageFrame: CGRect = .zero
     private var imageSize: CGSize = .zero
     private var spotlightClip: CGPath?
+    private var surround: CGColor?
 
     private var textOverlay: AnnoTextEditorOverlay?
     private let redactionCache = AnnoRedactionPreviewCache()
@@ -81,7 +86,8 @@ final class AnnoCanvasNSView: NSView {
         sourceImage: CGImage?,
         imageFrame: CGRect,
         imageSize: CGSize,
-        spotlightClip: CGPath?
+        spotlightClip: CGPath?,
+        surround: CGColor?
     ) {
         if self.editor !== editor {
             self.editor = editor
@@ -92,6 +98,7 @@ final class AnnoCanvasNSView: NSView {
         self.sourceImage = sourceImage
         redactionCache.configure(source: sourceImage, imageFrame: imageFrame)
         self.spotlightClip = spotlightClip
+        self.surround = surround
         self.imageFrame = imageFrame
         self.imageSize = imageSize
         // The editor's camera has to track the layout even when no pointer event has fired -
@@ -167,7 +174,8 @@ final class AnnoCanvasNSView: NSView {
             spotlightClip: spotlightClip,
             isFlippedContext: true,
             redactionPreviewCache: redactionCache,
-            backdrop: sourceImage
+            backdrop: sourceImage,
+            surround: surround
         )
 
         // The shape being typed into is drawn by its text overlay instead, so the two don't double
