@@ -617,6 +617,7 @@ struct InspectorSegmented<Option: Hashable, Label: View>: View {
     let options: [Option]
     let isSelected: (Option) -> Bool
     let onTap: (Option) -> Void
+    var isEnabled: (Option) -> Bool = { _ in true }
     @ViewBuilder let label: (Option) -> Label
 
     var height: CGFloat = InspectorMetrics.sliderHeight
@@ -652,7 +653,8 @@ struct InspectorSegmented<Option: Hashable, Label: View>: View {
 
     private func segment(for option: Option) -> some View {
         let selected = isSelected(option)
-        let isHovering = hoveredOption == option
+        let enabled = isEnabled(option)
+        let isHovering = enabled && hoveredOption == option
 
         return Button {
             onTap(option)
@@ -674,7 +676,8 @@ struct InspectorSegmented<Option: Hashable, Label: View>: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .foregroundStyle(selected ? Color.primary : Color.secondary)
+        .foregroundStyle(selected ? Color.primary : enabled ? Color.secondary : Color(nsColor: .tertiaryLabelColor))
+        .disabled(!enabled)
         .onHover { isHovering in
             if isHovering {
                 hoveredOption = option

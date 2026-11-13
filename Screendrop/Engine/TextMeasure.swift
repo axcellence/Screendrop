@@ -3,13 +3,14 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-/// The three system faces annotations can be set in. Screendrop used to expose every installed
-/// family; the SF faces are the only ones that look right over a macOS screenshot and the only ones
-/// guaranteed to be present, so the picker is limited to them.
+/// The faces annotations can be set in. Screendrop used to expose every installed family; the
+/// picker offers the SF faces, which look right over a macOS screenshot and are always present, and
+/// Caveat, a marker handwriting face that ships inside the app (`HandwritingFont`).
 enum AnnoFontFamily: String, CaseIterable, Codable, Identifiable {
     case pro
     case compact
     case rounded
+    case handwriting
 
     var id: String { rawValue }
 
@@ -18,8 +19,12 @@ enum AnnoFontFamily: String, CaseIterable, Codable, Identifiable {
         case .pro: "SF Pro"
         case .compact: "SF Compact"
         case .rounded: "SF Rounded"
+        case .handwriting: "Handwriting"
         }
     }
+
+    /// Caveat has no italic, so the Italic toggle does nothing for it.
+    var supportsItalic: Bool { self != .handwriting }
 }
 
 /// Lays a text shape out and turns it into glyph outlines.
@@ -52,12 +57,18 @@ enum TextMeasure {
 
     static func font(_ props: TextProps, opticalSize: Double? = nil) -> NSFont {
         let size = Swift.max(1, CGFloat(props.fontSize))
+        // Caveat has a single optical design and no italic, so none of the SF adjustments below
+        // apply. Without the bundled file it falls back to SF Pro.
+        if props.fontFamily == .handwriting,
+           let handwriting = HandwritingFont.font(size: size, isBold: props.isBold) {
+            return handwriting
+        }
         let weight: NSFont.Weight = props.isBold ? .bold : .regular
         let base = NSFont.systemFont(ofSize: size, weight: weight)
 
         var descriptor = base.fontDescriptor
         switch props.fontFamily {
-        case .pro:
+        case .pro, .handwriting:
             break
         case .rounded:
             if let rounded = descriptor.withDesign(.rounded) { descriptor = rounded }
