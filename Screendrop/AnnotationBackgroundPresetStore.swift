@@ -22,6 +22,9 @@ struct AnnotationBackgroundPreset: Identifiable, Codable, Equatable {
     ) {
         self.id = id
         self.name = name
+        // The fill for grown space belongs to one screenshot, not to a reusable look.
+        var settings = settings
+        settings.extensionFill = nil
         self.background = StoredBackground(settings)
     }
 
@@ -56,6 +59,7 @@ struct AnnotationBackgroundPresetImportResult {
 extension AnnotationBackgroundSettings {
     fileprivate var presetComparable: AnnotationBackgroundSettings {
         var comparable = self
+        comparable.extensionFill = nil
         switch comparable.style {
         case .customWallpaper(let wallpaper):
             comparable.customWallpaper = wallpaper

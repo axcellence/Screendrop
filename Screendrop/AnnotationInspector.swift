@@ -105,7 +105,8 @@ struct AnnotationEditorInspector: View {
                         onEditorAction: onEditorAction,
                         onPickWallpaper: onPickWallpaper,
                         onPreview: { model.previewBackground($0, isHovering: $1) },
-                        onEndPreview: { model.previewBackground = nil }
+                        onEndPreview: { model.previewBackground = nil },
+                        matchedExtensionFill: model.canvasLayout.isGrown ? model.matchedEdgeColor : nil
                     )
                 }
 

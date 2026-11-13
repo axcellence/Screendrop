@@ -152,13 +152,14 @@ enum AnnotationRenderer {
 
     }
 
-    /// What fills room grown for annotations when there is no background: the screenshot's own
-    /// edge colour.
+    /// What fills room grown for annotations when there is no background: the colour picked in
+    /// the inspector, or else the screenshot's own edge colour.
     nonisolated static func extensionFill(
         for settings: AnnotationBackgroundSettings,
         sourceImage: CGImage
     ) -> CGColor? {
         guard settings.style == .none else { return nil }
+        if let color = settings.extensionFill { return color.nsColor.cgColor }
         return AnnotationEdgeColor.match(sourceImage)
     }
 

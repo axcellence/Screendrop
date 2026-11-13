@@ -726,7 +726,9 @@ final class AnnotationEditorModel {
 
     /// Applies the complete reusable background recipe to this editor.
     func applyBackgroundPreset(_ preset: AnnotationBackgroundPreset) {
+        let extensionFill = backgroundSettings.extensionFill
         backgroundSettings = preset.settings
+        backgroundSettings.extensionFill = extensionFill
         appliedBackgroundPresetID = preset.id
     }
 }
@@ -965,7 +967,7 @@ extension AnnotationEditorModel {
     }
 
     /// The screenshot's edge colour, or white when its edge is busy or see-through: what fills
-    /// grown space when there is no background.
+    /// grown space when there is no background and no colour has been picked.
     var matchedEdgeColor: CGColor {
         guard let url = baseImageURL ?? sourceURL else { return AnnotationEdgeColor.fallback }
         if let cached = matchedEdgeColorCache, cached.url == url { return cached.color }
@@ -980,7 +982,7 @@ extension AnnotationEditorModel {
     /// What the grown space shows when there is no background, or `nil` when there is none to fill.
     var extensionFillColor: CGColor? {
         guard backgroundSettings.style == .none, canvasLayout.isGrown else { return nil }
-        return matchedEdgeColor
+        return backgroundSettings.extensionFill?.nsColor.cgColor ?? matchedEdgeColor
     }
 
     /// Takes the shapes' new extent once nothing is being dragged or typed, so the canvas resizes
