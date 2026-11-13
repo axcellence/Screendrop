@@ -1,6 +1,6 @@
 # This fork
 
-A personal fork of [fayazara/Screendrop](https://github.com/fayazara/Screendrop) with two additions
+A personal fork of [fayazara/Screendrop](https://github.com/fayazara/Screendrop) with three additions
 to the screenshot editor. Everything else is the original app.
 
 ## What is different
@@ -12,9 +12,12 @@ to the screenshot editor. Everything else is the original app.
 - **Highlighter** (`M`). A freehand marker that tints what it passes over and leaves the text
   readable, with a scalloped marker edge at each end. It keeps its own colour and size, apart from
   the pen's. The existing Highlight tool, which dims everything outside a region, is unchanged.
+- **Handwriting text.** A fourth font, Handwriting (Caveat, a marker hand), after the SF faces. It
+  ships inside the app with its licence, so it looks the same on any Mac. Bold switches its weight;
+  it has no italic. It is the default for new text and the choice is remembered.
 
-A screenshot that uses the highlighter will not reopen for editing in the official app; the
-exported image is unaffected.
+A screenshot that uses the highlighter or Handwriting text will not reopen for editing in the
+official app; the exported image is unaffected.
 
 ## How it is set up
 
@@ -48,6 +51,6 @@ scripts/install-fork.sh
 
 ## Check the drawing code
 
-There is no test target. The two features are covered by a standalone check that compiles the real
+There is no test target. The three features are covered by a standalone check that compiles the real
 annotation engine; the command is in the header of `scripts/check-annotation-ink.swift`. Pass it a
-directory to also write PNG contact sheets of every shape and stroke.
+directory to also write PNG contact sheets of every shape and stroke, and of Handwriting text.
