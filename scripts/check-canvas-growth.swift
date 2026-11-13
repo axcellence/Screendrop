@@ -292,8 +292,15 @@ struct CanvasGrowthChecks {
         // A stray shape far away cannot make an absurd canvas.
         let stray = arrow(from: Vec(600, 200), to: Vec(60_000, 200))
         let strayLayout = layout(size, AnnotationBackgroundSettings(), [stray])
-        expect(strayLayout.growth.right <= 640 && strayLayout.canvasSize.width <= AnnotationCanvasGrowth.maximumCanvasDimension,
+        expect(strayLayout.canvasSize.width <= AnnotationCanvasGrowth.maximumCanvasDimension,
                "a stray shape grew the canvas to \(strayLayout.canvasSize)")
+
+        // A note much wider than a small screenshot still fits beside it.
+        let small = CGSize(width: 200, height: 120)
+        let longNote = arrow(from: Vec(150, 60), to: Vec(900, 60))
+        let smallLayout = layout(small, AnnotationBackgroundSettings(), [longNote])
+        expect(smallLayout.canvasSize.width >= 900,
+               "a note wider than a small screenshot was cut off: canvas \(smallLayout.canvasSize)")
     }
 
     // MARK: - Edge colour

@@ -33,10 +33,8 @@ nonisolated struct AnnotationCanvasGrowth: Equatable, Sendable {
     /// Space left between a shape's ink and the grown edge, as a fraction of the screenshot's
     /// shorter side.
     static let marginFraction: CGFloat = 0.04
-    /// A side never grows by more than the screenshot's longer side...
-    static let maximumSideFraction: CGFloat = 1
-    /// ...and the grown canvas is never wider or taller than this, so a stray shape far away
-    /// cannot ask for an enormous bitmap. Ink beyond the cap is cut off at the edge.
+    /// The grown canvas is never wider or taller than this, so a stray shape far away cannot ask
+    /// for an enormous bitmap. Ink beyond the cap is cut off at the edge.
     static let maximumCanvasDimension: CGFloat = 10_000
 
     /// The growth for `canvasRect` (today's canvas, in page space) to hold `extents`.
@@ -73,12 +71,6 @@ nonisolated struct AnnotationCanvasGrowth: Equatable, Sendable {
             }
         }
         guard !growth.isZero else { return .zero }
-
-        let sideLimit = max(contentSize.width, contentSize.height) * maximumSideFraction
-        growth.top = min(growth.top, sideLimit)
-        growth.left = min(growth.left, sideLimit)
-        growth.bottom = min(growth.bottom, sideLimit)
-        growth.right = min(growth.right, sideLimit)
 
         func capped(_ leading: inout CGFloat, _ trailing: inout CGFloat, base: CGFloat) {
             let room = max(0, maximumCanvasDimension - base)
