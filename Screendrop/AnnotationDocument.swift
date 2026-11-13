@@ -72,6 +72,8 @@ struct StoredBackground: Codable, Equatable {
     var progressiveBlur: StoredProgressiveBlurSettings?
     var border: StoredScreenshotBorder?
     var watermark: StoredWatermark?
+    /// Missing from documents saved before the canvas could grow; `nil` means matched to the edge.
+    var extensionFill: StoredColor?
 
     init(_ settings: AnnotationBackgroundSettings) {
         switch settings.style {
@@ -96,6 +98,7 @@ struct StoredBackground: Codable, Equatable {
         progressiveBlur = StoredProgressiveBlurSettings(settings.progressiveBlur)
         border = StoredScreenshotBorder(settings.border)
         watermark = StoredWatermark(settings.watermark)
+        extensionFill = settings.extensionFill.map(StoredColor.init)
     }
 
     var settings: AnnotationBackgroundSettings {
@@ -132,6 +135,7 @@ struct StoredBackground: Codable, Equatable {
         if let watermark {
             output.watermark = watermark.settings
         }
+        output.extensionFill = extensionFill?.backgroundColor
         return output
     }
 }

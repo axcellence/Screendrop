@@ -29,6 +29,9 @@ struct AnnotationFrameInspector: View {
     let onPickWallpaper: () -> Void
     let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
     let onEndPreview: () -> Void
+    /// The screenshot's edge colour, while the canvas has grown for annotations with no
+    /// background; `nil` hides the fill row.
+    var matchedExtensionFill: CGColor? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
@@ -45,6 +48,14 @@ struct AnnotationFrameInspector: View {
 
             if !settings.requiresCanvasLayout {
                 InspectorHint("Pick a background to frame the screenshot.")
+            }
+
+            if settings.style == .none, let matchedExtensionFill {
+                InspectorExtensionFillRow(
+                    fill: $settings.extensionFill,
+                    matchedColor: matchedExtensionFill,
+                    onEditorAction: onEditorAction
+                )
             }
 
             frameControls
@@ -104,6 +115,69 @@ struct AnnotationFrameInspector: View {
                     onEditorAction: onEditorAction
                 )
                 .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+    }
+}
+
+/// The fill for room the canvas grows to hold annotations drawn beside the screenshot, when there
+/// is no background: matched to the screenshot's edge, or a colour picked here.
+struct InspectorExtensionFillRow: View {
+    @Binding var fill: AnnotationBackgroundColor?
+    let matchedColor: CGColor
+    var onEditorAction: () -> Void = {}
+
+    @State private var isHovering = false
+
+    var body: some View {
+        InspectorRow("Extra space") {
+            HStack(spacing: 4) {
+                Button {
+                    onEditorAction()
+                    let current = fill?.nsColor ?? NSColor(cgColor: matchedColor) ?? .white
+                    AnnotationColorPanelBridge.shared.present(current: current) { color in
+                        fill = AnnotationBackgroundColor(custom: Color(nsColor: color))
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(fill?.color ?? Color(cgColor: matchedColor))
+                            .frame(width: 26, height: 18)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                            }
+
+                        Text(fill == nil ? "Match edge" : "Custom")
+                            .font(.inspectorValue)
+                            .foregroundStyle(.primary.opacity(0.85))
+                            .lineLimit(1)
+
+                        Spacer(minLength: 4)
+                    }
+                    .padding(.leading, 7)
+                    .padding(.trailing, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .inspectorField()
+                    .overlay {
+                        if isHovering {
+                            RoundedRectangle(cornerRadius: InspectorMetrics.fieldRadius, style: .continuous)
+                                .fill(InspectorControlPalette.hoverFill)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .onHover { isHovering = $0 }
+                .help("Choose the color for space added around the screenshot")
+                .accessibilityLabel("Extra space color")
+                .accessibilityValue(fill == nil ? "Matched to the screenshot's edge" : "Custom")
+
+                if fill != nil {
+                    InspectorResetButton(help: "Match the screenshot's edge") {
+                        onEditorAction()
+                        fill = nil
+                    }
+                }
             }
         }
     }

@@ -22,6 +22,9 @@ struct AnnotationBackgroundSettings: Equatable {
     var camera = AnnotationCameraSettings()
     var progressiveBlur = AnnotationProgressiveBlurSettings()
     var watermark = AnnotationWatermarkSettings()
+    /// The fill for room the canvas grows to hold annotations drawn outside it, when there is no
+    /// background. `nil` matches the screenshot's own edge.
+    var extensionFill: AnnotationBackgroundColor?
 
     var isEnabled: Bool {
         style != .none
