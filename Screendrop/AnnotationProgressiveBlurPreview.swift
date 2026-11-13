@@ -253,6 +253,9 @@ nonisolated enum AnnotationScenePreviewRenderer {
             contentImage: contentImage,
             settings: settings,
             colorSpace: colorSpace,
+            // Shapes are measured in the source's pixels; this render may be downscaled.
+            annotationExtents: AnnotationCanvasGrowth.extents(of: shapes).map { $0.scaled(by: scale) },
+            extensionFill: AnnotationRenderer.extensionFill(for: settings, sourceImage: source),
             foregroundOverlay: { context, layout, imageRect, imageClipPath in
                 AnnotationRenderer.drawAnnotations(
                     shapes,

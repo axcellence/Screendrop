@@ -10,6 +10,56 @@ nonisolated struct AnnotationBackgroundLayout {
     let cardRect: CGRect
     let imageRect: CGRect
     let padding: CGFloat
+    /// How far the canvas grew past its usual edges to hold annotations drawn outside it.
+    var growth: AnnotationCanvasGrowth = .zero
+
+    var isGrown: Bool { !growth.isZero }
+
+    /// The canvas for `settings`, grown on any side an annotation in `annotationExtents` crosses.
+    /// With nothing crossing an edge this is exactly the canvas without annotations.
+    static func make(
+        contentSize: CGSize,
+        settings: AnnotationBackgroundSettings,
+        annotationExtents: [AnnotationInkExtent]
+    ) -> AnnotationBackgroundLayout {
+        let base = make(contentSize: contentSize, settings: settings)
+        guard !annotationExtents.isEmpty, base.canvasSize.width > 0, base.canvasSize.height > 0 else {
+            return base
+        }
+        // Page space is the screenshot's pixels, laid 1:1 into the canvas at `imageRect`.
+        let canvasInPage = CGRect(
+            x: -base.imageRect.minX,
+            y: -base.imageRect.minY,
+            width: base.canvasSize.width,
+            height: base.canvasSize.height
+        )
+        let growth = AnnotationCanvasGrowth.make(
+            canvasRect: canvasInPage,
+            extents: annotationExtents,
+            contentSize: contentSize
+        )
+        guard !growth.isZero else { return base }
+
+        var canvasSize = CGSize(
+            width: base.canvasSize.width + growth.left + growth.right,
+            height: base.canvasSize.height + growth.top + growth.bottom
+        )
+        var offset = CGPoint(x: growth.left, y: growth.top)
+        // A fixed ratio is kept by adding room evenly around the grown canvas.
+        if settings.usesCanvasLayout, let ratio = settings.aspectRatio.value {
+            let expanded = expandedSize(canvasSize, aspectRatio: ratio)
+            offset.x += (expanded.width - canvasSize.width) / 2
+            offset.y += (expanded.height - canvasSize.height) / 2
+            canvasSize = expanded
+        }
+        return AnnotationBackgroundLayout(
+            canvasSize: canvasSize,
+            cardRect: base.cardRect.offsetBy(dx: offset.x, dy: offset.y),
+            imageRect: base.imageRect.offsetBy(dx: offset.x, dy: offset.y),
+            padding: base.padding,
+            growth: growth
+        )
+    }
 
     static func make(contentSize: CGSize, settings: AnnotationBackgroundSettings) -> AnnotationBackgroundLayout {
         guard contentSize.width > 0, contentSize.height > 0 else {

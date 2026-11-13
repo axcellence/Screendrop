@@ -37,11 +37,17 @@ nonisolated enum AnnotationBackgroundRenderer {
         contentImage: CGImage,
         settings: AnnotationBackgroundSettings,
         colorSpace: CGColorSpace,
+        annotationExtents: [AnnotationInkExtent] = [],
+        extensionFill: CGColor? = nil,
         foregroundOverlay: ForegroundOverlay? = nil,
         canvasOverlay: CanvasOverlay? = nil
     ) throws -> CGImage {
         let contentSize = CGSize(width: contentImage.width, height: contentImage.height)
-        let layout = AnnotationBackgroundLayout.make(contentSize: contentSize, settings: settings)
+        let layout = AnnotationBackgroundLayout.make(
+            contentSize: contentSize,
+            settings: settings,
+            annotationExtents: annotationExtents
+        )
         let width = max(1, Int(ceil(layout.canvasSize.width)))
         let height = max(1, Int(ceil(layout.canvasSize.height)))
 
@@ -59,7 +65,13 @@ nonisolated enum AnnotationBackgroundRenderer {
 
         let canvasRect = CGRect(x: 0, y: 0, width: width, height: height)
         context.interpolationQuality = .high
-        drawBackground(settings.style, in: canvasRect, context: context)
+        if settings.style == .none, layout.isGrown, let extensionFill {
+            // Room grown for annotations, with no background: the screenshot carries on.
+            context.setFillColor(extensionFill)
+            context.fill(canvasRect)
+        } else {
+            drawBackground(settings.style, in: canvasRect, context: context)
+        }
 
         let borderWidth = settings.border.pixelThickness(for: contentSize)
         let imageRect = pixelAlignedImageRect(

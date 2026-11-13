@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import ImageIO
 import Observation
 import SwiftUI
 
@@ -67,6 +68,13 @@ final class AnnotationEditorModel {
     /// The aspect-ratio constraint applied while cropping.
     var cropAspect: CropAspectRatio = .freeform
 
+    // MARK: Canvas growth
+    /// Where the annotations sat when the last gesture or text edit ended. The canvas grows to
+    /// hold these rather than the live shapes, so it never resizes under the pointer.
+    private(set) var committedAnnotationExtents: [AnnotationInkExtent] = []
+    @ObservationIgnored private var measuredShapes: [AnnoShape] = []
+    @ObservationIgnored private var matchedEdgeColorCache: (url: URL, color: CGColor)?
+
     // MARK: Zoom & pan
     /// The rendered camera and active gesture are committed as one value.
     var canvasViewport = AnnotationCanvasViewport()
@@ -107,7 +115,9 @@ final class AnnotationEditorModel {
 
     init() {
         engine.onChange = { [weak self] in
-            self?.revision &+= 1
+            guard let self else { return }
+            revision &+= 1
+            settleCanvasExtents()
         }
     }
 
@@ -359,18 +369,6 @@ final class AnnotationEditorModel {
         engine.viewport = AnnoViewport(imageFrame: imageFrame, imageSize: imageSize)
     }
 
-    /// Tells the engine which part of the page an export contains, so moved
-    /// and resized shapes stay inside it.
-    private func updatePageLimits(boundaryFrame: CGRect) {
-        guard !boundaryFrame.isEmpty else {
-            engine.pageLimits = nil
-            return
-        }
-        let topLeft = engine.screenToPage(Vec(boundaryFrame.origin))
-        let bottomRight = engine.screenToPage(Vec(CGPoint(x: boundaryFrame.maxX, y: boundaryFrame.maxY)))
-        engine.pageLimits = Box(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y)
-    }
-
     private func pointer(at location: CGPoint) -> PointerInfo {
         let flags = NSEvent.modifierFlags
         let screenPoint = Vec(location)
@@ -383,50 +381,32 @@ final class AnnotationEditorModel {
         )
     }
 
-    func beginInteraction(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) {
+    func beginInteraction(at location: CGPoint, imageFrame: CGRect) {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
-        updatePageLimits(boundaryFrame: boundaryFrame)
-        // Drawing tools only start on the image (or its canvas), which is all
-        // an export contains. A press outside still ends text editing.
-        // Selecting is allowed everywhere so edge handles stay reachable.
-        if engine.tool != .select, !boundaryFrame.contains(location) {
-            engine.stopEditingText()
-            selectedTool = engine.tool
-            return
-        }
+        // Every tool works anywhere: the canvas grows to hold what is drawn
+        // outside it once the gesture ends.
         engine.pointerDown(pointer(at: location))
         selectedTool = engine.tool
         syncStyleFromSelection()
     }
 
-    func updateInteraction(to location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) {
+    func updateInteraction(to location: CGPoint, imageFrame: CGRect) {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
-        engine.pointerMove(pointer(at: drawingLocation(location, in: boundaryFrame)))
+        engine.pointerMove(pointer(at: location))
         selectedTool = engine.tool
     }
 
-    func endInteraction(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) {
+    func endInteraction(at location: CGPoint, imageFrame: CGRect) {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
-        engine.pointerUp(pointer(at: drawingLocation(location, in: boundaryFrame)))
+        engine.pointerUp(pointer(at: location))
         selectedTool = engine.tool
         syncStyleFromSelection()
     }
 
-    /// A shape being drawn stops at the boundary rather than running off
-    /// the image. Moving and resizing existing shapes is left free.
-    private func drawingLocation(_ location: CGPoint, in boundaryFrame: CGRect) -> CGPoint {
-        guard engine.tool != .select, !boundaryFrame.isEmpty else { return location }
-        return CGPoint(
-            x: min(max(location.x, boundaryFrame.minX), boundaryFrame.maxX),
-            y: min(max(location.y, boundaryFrame.minY), boundaryFrame.maxY)
-        )
-    }
-
-    func hoveredAnnotation(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) -> AnnoShape? {
-        guard boundaryFrame.contains(location) else { return nil }
+    func hoveredAnnotation(at location: CGPoint, imageFrame: CGRect) -> AnnoShape? {
         updateViewport(imageFrame: imageFrame)
         return engine.hitShape(at: engine.screenToPage(Vec(location)))
     }
@@ -435,10 +415,6 @@ final class AnnotationEditorModel {
     func hoveredHandle(at location: CGPoint, imageFrame: CGRect) -> AnnoSelectionHandle? {
         updateViewport(imageFrame: imageFrame)
         return engine.handle(at: Vec(location))
-    }
-
-    func containsInteractionPoint(_ location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) -> Bool {
-        boundaryFrame.contains(location)
     }
 
     // MARK: - Tools and style
@@ -973,5 +949,82 @@ extension AnnotationEditorModel {
               backgroundSettings.style != .none
         else { return backgroundSettings.style }
         return previewBackground
+    }
+}
+
+// MARK: - Canvas growth
+
+extension AnnotationEditorModel {
+    /// The canvas as the export will lay it out, grown for annotations drawn outside it.
+    var canvasLayout: AnnotationBackgroundLayout {
+        AnnotationBackgroundLayout.make(
+            contentSize: imageSize,
+            settings: backgroundSettings,
+            annotationExtents: committedAnnotationExtents
+        )
+    }
+
+    /// The screenshot's edge colour, or white when its edge is busy or see-through: what fills
+    /// grown space when there is no background.
+    var matchedEdgeColor: CGColor {
+        guard let url = baseImageURL ?? sourceURL else { return AnnotationEdgeColor.fallback }
+        if let cached = matchedEdgeColorCache, cached.url == url { return cached.color }
+        // The full-resolution image, as the exporter samples it, so the two agree exactly.
+        let color = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
+            .flatMap { CGImageSourceCreateImageAtIndex($0, 0, [kCGImageSourceShouldCache: false] as CFDictionary) }
+            .map(AnnotationEdgeColor.match) ?? AnnotationEdgeColor.fallback
+        matchedEdgeColorCache = (url, color)
+        return color
+    }
+
+    /// What the grown space shows when there is no background, or `nil` when there is none to fill.
+    var extensionFillColor: CGColor? {
+        guard backgroundSettings.style == .none, canvasLayout.isGrown else { return nil }
+        return matchedEdgeColor
+    }
+
+    /// Takes the shapes' new extent once nothing is being dragged or typed, so the canvas resizes
+    /// when the pointer lets go. Undo, delete, paste, nudges and loading all land here too.
+    func settleCanvasExtents() {
+        guard case .idle = engine.interaction, engine.editingTextId == nil else { return }
+        let shapes = engine.shapes
+        guard shapes != measuredShapes else { return }
+        measuredShapes = shapes
+        let extents = AnnotationCanvasGrowth.extents(of: shapes)
+        guard extents != committedAnnotationExtents else { return }
+
+        let oldLayout = canvasLayout
+        let newLayout = AnnotationBackgroundLayout.make(
+            contentSize: imageSize,
+            settings: backgroundSettings,
+            annotationExtents: extents
+        )
+        guard newLayout.canvasSize != oldLayout.canvasSize || newLayout.imageRect != oldLayout.imageRect else {
+            committedAnnotationExtents = extents
+            return
+        }
+
+        // A zoomed or panned view keeps the screenshot where it is; a fitted one refits.
+        if !canvasViewport.isFitting, var layout = canvasViewport.layout,
+           oldLayout.canvasSize.width > 0, newLayout.canvasSize.width > 0 {
+            let frame = canvasViewport.frame
+            let scale = frame.width / oldLayout.canvasSize.width
+            let imageOrigin = CGPoint(
+                x: frame.minX + oldLayout.imageRect.minX * scale,
+                y: frame.minY + oldLayout.imageRect.minY * scale
+            )
+            layout.canvasSize = newLayout.canvasSize
+            canvasViewport.show(CGRect(
+                x: imageOrigin.x - newLayout.imageRect.minX * scale,
+                y: imageOrigin.y - newLayout.imageRect.minY * scale,
+                width: newLayout.canvasSize.width * scale,
+                height: newLayout.canvasSize.height * scale
+            ), in: layout)
+            committedAnnotationExtents = extents
+        } else {
+            withAnimation(.canvasMoveIfAllowed) {
+                committedAnnotationExtents = extents
+            }
+        }
     }
 }

@@ -64,15 +64,14 @@ struct AnnotationCanvas: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let backgroundLayout = AnnotationBackgroundLayout.make(
-                contentSize: model.imageSize,
-                settings: model.backgroundSettings
-            )
+            let backgroundLayout = model.canvasLayout
             let viewport = configuredViewport(in: proxy.size)
             let canvasFrame = viewport.frame
             let displayLayout = backgroundLayout.scaled(to: canvasFrame)
             let imageFrame = displayLayout.imageFrame
-            let boundaryFrame = model.backgroundSettings.usesCanvasLayout ? displayLayout.canvasFrame : imageFrame
+            let boundaryFrame = model.backgroundSettings.usesCanvasLayout || backgroundLayout.isGrown
+                ? displayLayout.canvasFrame
+                : imageFrame
             let allowedBounds = model.annotationBounds(for: imageFrame, boundaryFrame: boundaryFrame)
             let screenshotGeometry = AnnotationScreenshotFrameGeometry(
                 imageRect: imageFrame,
@@ -127,6 +126,7 @@ struct AnnotationCanvas: View {
                     canvasFrame: displayLayout.canvasFrame,
                     backgroundStyle: model.displayedBackgroundStyle,
                     showsBackground: model.backgroundSettings.isEnabled,
+                    extensionFill: model.extensionFillColor.map { Color(cgColor: $0) },
                     screenshotGeometry: screenshotGeometry,
                     allowedBounds: allowedBounds,
                     clipCorners: clipCorners,
@@ -170,7 +170,6 @@ struct AnnotationCanvas: View {
             )
             .gesture(interactionGesture(
                 imageFrame: imageFrame,
-                boundaryFrame: boundaryFrame,
                 projection: projection,
                 visibleCanvasFrame: effectiveCamera.hasEffect ? displayLayout.canvasFrame : nil
             ))
@@ -205,20 +204,20 @@ struct AnnotationCanvas: View {
                     }
                     let mappedLocation = projection.unproject(location)
                     hoveredLocation = mappedLocation
-                    updateCursor(at: mappedLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                    updateCursor(at: mappedLocation, imageFrame: imageFrame)
                 case .ended:
                     hoveredLocation = nil
                     setCursor(.arrow)
                 }
             }
             .onChange(of: model.selectedTool) { _, _ in
-                refreshCursor(imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                refreshCursor(imageFrame: imageFrame)
             }
             .onChange(of: model.revision) { _, _ in
-                refreshCursor(imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                refreshCursor(imageFrame: imageFrame)
             }
             .onChange(of: model.selectionCount) { _, _ in
-                refreshCursor(imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                refreshCursor(imageFrame: imageFrame)
             }
             .onDisappear {
                 model.endCanvasPinch()
@@ -260,6 +259,7 @@ struct AnnotationCanvas: View {
         canvasFrame: CGRect,
         backgroundStyle: AnnotationBackgroundStyle,
         showsBackground: Bool,
+        extensionFill: Color?,
         screenshotGeometry: AnnotationScreenshotFrameGeometry,
         allowedBounds: CGRect,
         clipCorners: RectangleCornerRadii,
@@ -281,6 +281,7 @@ struct AnnotationCanvas: View {
                     canvasFrame: canvasFrame,
                     backgroundStyle: backgroundStyle,
                     showsBackground: showsBackground,
+                    extensionFill: extensionFill,
                     screenshotGeometry: screenshotGeometry,
                     allowedBounds: allowedBounds,
                     clipCorners: clipCorners,
@@ -295,6 +296,7 @@ struct AnnotationCanvas: View {
                         canvasFrame: canvasFrame,
                         backgroundStyle: backgroundStyle,
                         showsBackground: showsBackground,
+                        extensionFill: extensionFill,
                         screenshotGeometry: screenshotGeometry,
                         allowedBounds: allowedBounds,
                         clipCorners: clipCorners,
@@ -339,6 +341,7 @@ struct AnnotationCanvas: View {
                 canvasFrame: canvasFrame,
                 backgroundStyle: backgroundStyle,
                 showsBackground: showsBackground,
+                extensionFill: extensionFill,
                 screenshotGeometry: screenshotGeometry,
                 allowedBounds: allowedBounds,
                 clipCorners: clipCorners,
@@ -354,6 +357,7 @@ struct AnnotationCanvas: View {
         canvasFrame: CGRect,
         backgroundStyle: AnnotationBackgroundStyle,
         showsBackground: Bool,
+        extensionFill: Color?,
         screenshotGeometry: AnnotationScreenshotFrameGeometry,
         allowedBounds: CGRect,
         clipCorners: RectangleCornerRadii,
@@ -364,6 +368,11 @@ struct AnnotationCanvas: View {
         ZStack(alignment: .topLeading) {
             if showsBackground {
                 AnnotationBackgroundStageFill(style: backgroundStyle)
+                    .frame(width: canvasFrame.width, height: canvasFrame.height)
+                    .position(x: canvasFrame.midX, y: canvasFrame.midY)
+            } else if let extensionFill {
+                // Room grown for annotations, filled the way the export fills it.
+                extensionFill
                     .frame(width: canvasFrame.width, height: canvasFrame.height)
                     .position(x: canvasFrame.midX, y: canvasFrame.midY)
             }
@@ -678,7 +687,6 @@ struct AnnotationCanvas: View {
 
     private func interactionGesture(
         imageFrame: CGRect,
-        boundaryFrame: CGRect,
         projection: AnnotationCameraProjection,
         visibleCanvasFrame: CGRect?
     ) -> some Gesture {
@@ -693,7 +701,7 @@ struct AnnotationCanvas: View {
                         model.beginCropDrag(at: value.startLocation)
                     }
                     model.updateCropDrag(to: value.location)
-                    updateCursor(at: value.location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                    updateCursor(at: value.location, imageFrame: imageFrame)
                     return
                 }
                 guard hasActiveInteraction || visibleCanvasFrame?.contains(value.startLocation) != false else {
@@ -704,11 +712,11 @@ struct AnnotationCanvas: View {
                 if !hasActiveInteraction {
                     hasActiveInteraction = true
                     onEditorInteraction()
-                    model.beginInteraction(at: startLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                    model.beginInteraction(at: startLocation, imageFrame: imageFrame)
                 }
 
-                model.updateInteraction(to: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
-                updateCursor(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                model.updateInteraction(to: location, imageFrame: imageFrame)
+                updateCursor(at: location, imageFrame: imageFrame)
             }
             .onEnded { value in
                 guard hasActiveInteraction else { return }
@@ -716,13 +724,13 @@ struct AnnotationCanvas: View {
                     model.endCropDrag()
                     isCropGesture = false
                     hasActiveInteraction = false
-                    updateCursor(at: value.location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                    updateCursor(at: value.location, imageFrame: imageFrame)
                     return
                 }
                 let location = projection.unproject(value.location)
-                model.endInteraction(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                model.endInteraction(at: location, imageFrame: imageFrame)
                 hasActiveInteraction = false
-                updateCursor(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+                updateCursor(at: location, imageFrame: imageFrame)
             }
     }
 
@@ -735,24 +743,19 @@ struct AnnotationCanvas: View {
         )
     }
 
-    private func refreshCursor(imageFrame: CGRect, boundaryFrame: CGRect) {
+    private func refreshCursor(imageFrame: CGRect) {
         guard let hoveredLocation else { return }
-        updateCursor(at: hoveredLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+        updateCursor(at: hoveredLocation, imageFrame: imageFrame)
     }
 
-    private func updateCursor(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) {
+    private func updateCursor(at location: CGPoint, imageFrame: CGRect) {
         if model.isCropping {
             setCursor(cropCursor(at: location))
             return
         }
-        guard model.containsInteractionPoint(location, imageFrame: imageFrame, boundaryFrame: boundaryFrame) else {
-            setCursor(.arrow)
-            return
-        }
-
         if hasActiveInteraction {
             setCursor(model.isTransformingExistingAnnotation ? .closedHand : .placement)
-        } else if model.hoveredAnnotation(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame) != nil {
+        } else if model.hoveredAnnotation(at: location, imageFrame: imageFrame) != nil {
             setCursor(.openHand)
         } else if model.selectedTool == .select {
             setCursor(.arrow)
