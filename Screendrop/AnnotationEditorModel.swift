@@ -79,7 +79,7 @@ final class AnnotationEditorModel {
     static let cropHandleMargin: CGFloat = 26
 
     // Text style defaults (applied to new text, updated when selecting existing text)
-    var textFontFamily: AnnoFontFamily = .pro
+    var textFontFamily: AnnoFontFamily = .handwriting
     var textFontSize: CGFloat = 48
     var textIsBold = true
     var textIsItalic = false
@@ -704,7 +704,7 @@ final class AnnotationEditorModel {
         markerSwatch = preset.resolvedMarkerSwatch
         markerWidth = CGFloat(preset.resolvedMarkerWidth)
         redactionDensity = CGFloat(preset.redactionDensity)
-        textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
+        textFontFamily = preset.resolvedTextFontFamily
         textFontSize = CGFloat(preset.textFontSize)
         textIsBold = preset.textIsBold
         textIsItalic = preset.textIsItalic
@@ -742,7 +742,8 @@ final class AnnotationEditorModel {
             textAlignmentRawValue: textAlignment.rawValue,
             isHandDrawn: isHandDrawn,
             markerSwatch: CodableSwatch(swatch: markerSwatch),
-            markerWidth: Double(markerWidth)
+            markerWidth: Double(markerWidth),
+            textFontFamily: textFontFamily.rawValue
         )
         AnnotationPresetStore.save(preset)
     }

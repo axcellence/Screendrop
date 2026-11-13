@@ -711,6 +711,9 @@ struct AnnotationInkChecks {
     }
 
     static func checkPreset() {
+        expect(AnnotationStylePreset().resolvedTextFontFamily == .handwriting
+               && AnnoEditor().currentFontFamily == .handwriting,
+               "preset: new text defaults to Handwriting")
         // Preferences saved by a build without these features must still load, with their existing
         // values intact, and default to hand-drawn shapes and a yellow highlighter.
         let legacy = Data("""
@@ -725,6 +728,10 @@ struct AnnotationInkChecks {
             expect(preset.resolvedIsHandDrawn, "preset: shapes default to hand-drawn")
             expect(preset.resolvedMarkerSwatch == .markerYellow, "preset: the highlighter defaults to yellow")
             expect(preset.resolvedMarkerWidth == 24, "preset: the highlighter defaults to a medium tip")
+            expect(preset.resolvedTextFontFamily == .handwriting,
+                   "preset: a text style remembered before Handwriting switches to it once")
+            expect(preset.textFontSize == 32 && !preset.textIsBold && preset.textIsItalic,
+                   "preset: the rest of the remembered text style survives")
         } catch {
             expect(false, "preset: preferences saved before these features failed to load: \(error)")
         }
@@ -736,11 +743,13 @@ struct AnnotationInkChecks {
             preset.isHandDrawn = false
             preset.markerSwatch = CodableSwatch(swatch: .pink)
             preset.markerWidth = 32
+            preset.textFontFamily = AnnoFontFamily.pro.rawValue
             let reloaded = try JSONDecoder().decode(AnnotationStylePreset.self, from: JSONEncoder().encode(preset))
             expect(reloaded.selectedTool == .marker, "preset: the highlighter is remembered as the last tool")
             expect(!reloaded.resolvedIsHandDrawn, "preset: choosing clean is remembered")
             expect(reloaded.resolvedMarkerSwatch == .pink, "preset: the highlighter colour is remembered")
             expect(reloaded.resolvedMarkerWidth == 32, "preset: the highlighter size is remembered")
+            expect(reloaded.resolvedTextFontFamily == .pro, "preset: picking SF Pro after the switch is remembered")
         } catch {
             expect(false, "preset: round trip threw \(error)")
         }

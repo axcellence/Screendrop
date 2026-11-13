@@ -46,6 +46,9 @@ struct AnnotationStylePreset: Codable, Equatable {
     var isHandDrawn: Bool?
     var markerSwatch: CodableSwatch?
     var markerWidth: Double?
+    /// The font family, from the build that added Handwriting on. `textFontName` stays written as
+    /// before, but presets saved earlier name SF Pro there, so they switch to Handwriting once.
+    var textFontFamily: String?
 
     var selectedTool: AnnotationTool {
         AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle
@@ -72,6 +75,11 @@ struct AnnotationStylePreset: Codable, Equatable {
     }
 
     var resolvedMarkerWidth: Double { markerWidth ?? 24 }
+
+    /// Handwriting unless the user has picked another face since it was added.
+    var resolvedTextFontFamily: AnnoFontFamily {
+        textFontFamily.flatMap(AnnoFontFamily.init(rawValue:)) ?? .handwriting
+    }
 }
 
 struct CodableSwatch: Codable, Equatable {
