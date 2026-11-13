@@ -989,10 +989,12 @@ extension AnnotationEditorModel {
         return backgroundSettings.extensionFill?.nsColor.cgColor ?? matchedEdgeColor
     }
 
-    /// Takes the shapes' new extent once nothing is being dragged or typed, so the canvas resizes
-    /// when the pointer lets go. Undo, delete, paste, nudges and loading all land here too.
+    /// Takes the shapes' new extent once nothing is being dragged, so the canvas resizes when the
+    /// pointer lets go. Typing is the exception: the canvas grows with the text, keystroke by
+    /// keystroke, so a note never runs out of sight. Undo, delete, paste, nudges and loading all
+    /// land here too.
     func settleCanvasExtents() {
-        guard !isBeginningInteraction, case .idle = engine.interaction, engine.editingTextId == nil else { return }
+        guard !isBeginningInteraction, case .idle = engine.interaction else { return }
         let shapes = engine.shapes
         guard shapes != measuredShapes else { return }
         measuredShapes = shapes
