@@ -44,6 +44,8 @@ struct ScreendropApp: App {
             CommandGroup(after: .newItem) {
                 Button("Open Image…") { ImageImporter.shared.presentOpenPanel() }
                     .keyboardShortcut("o", modifiers: .command)
+                Button("Annotate Clipboard Image") { ImageImporter.shared.annotateClipboard() }
+                    .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
                 Button("Show Library") { CaptureLibraryModel.shared.show() }
                     .keyboardShortcut("l", modifiers: [.command, .shift])

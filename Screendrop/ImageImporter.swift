@@ -38,6 +38,58 @@ final class ImageImporter {
         }
     }
 
+    /// Opens the image on the clipboard in an editor. Image files copied in
+    /// Finder open as themselves; Finder also puts their icons on the
+    /// clipboard, so files are checked before image data. Beeps when the
+    /// clipboard holds no image.
+    func annotateClipboard() {
+        let pasteboard = NSPasteboard.general
+        let fileURLs = pasteboard.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true,
+            .urlReadingContentsConformToTypes: [UTType.image.identifier],
+        ]) as? [URL] ?? []
+        if !fileURLs.isEmpty {
+            open(fileURLs)
+            return
+        }
+
+        guard let fileURL = Self.writeClipboardImage(from: pasteboard) else {
+            NSSound.beep()
+            return
+        }
+        let historyURL = ScreenshotHistoryStore.shared.importScreenshot(from: fileURL)
+        // A failed import hands back the source, which the editor still needs.
+        if historyURL != fileURL { try? FileManager.default.removeItem(at: fileURL) }
+        openEditor?(historyURL)
+    }
+
+    /// Writes the clipboard's image to a temporary PNG. PNG data is kept
+    /// byte for byte; any other image type is re-encoded at full pixel size.
+    private static func writeClipboardImage(from pasteboard: NSPasteboard) -> URL? {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Pasted-\(UUID().uuidString)")
+            .appendingPathExtension("png")
+
+        if let png = pasteboard.data(forType: .png) {
+            return (try? png.write(to: url)) == nil ? nil : url
+        }
+
+        let imageType = pasteboard.types?.first { UTType($0.rawValue)?.conforms(to: .image) == true }
+        let cgImage: CGImage? = if let imageType,
+            let data = pasteboard.data(forType: imageType),
+            let source = CGImageSourceCreateWithData(data as CFData, nil) {
+            CGImageSourceCreateImageAtIndex(source, 0, nil)
+        } else {
+            // PDF and other drawable content NSImage can read but ImageIO can't.
+            NSImage(pasteboard: pasteboard)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+        guard let cgImage,
+              let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        return CGImageDestinationFinalize(destination) ? url : nil
+    }
+
     static func imageURLs(in urls: [URL]) -> [URL] {
         urls.filter { url in
             url.isFileURL && UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true

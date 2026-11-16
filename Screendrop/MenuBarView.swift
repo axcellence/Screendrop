@@ -57,6 +57,13 @@ struct MenuBarView: View {
             .keyboardShortcut("o", modifiers: .command)
 
             Button {
+                ImageImporter.shared.annotateClipboard()
+            } label: {
+                Label("Annotate Clipboard Image", systemImage: "doc.on.clipboard")
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+
+            Button {
                 CaptureLibraryModel.shared.show()
             } label: {
                 Label("Open Library", systemImage: "square.grid.2x2")

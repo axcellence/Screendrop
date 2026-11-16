@@ -183,6 +183,7 @@ final class LibraryCollectionView: NSCollectionView {
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags.contains(.command), event.charactersIgnoringModifiers == "c" { command?(.copy); return }
+        if flags.contains(.command), event.charactersIgnoringModifiers == "v" { paste(nil); return }
         if flags.contains(.command), event.keyCode == 51 { command?(.trash); return }
         if !flags.contains(.command), !flags.contains(.control), !flags.contains(.option) {
             if event.keyCode == 49 { command?(.open); return }
@@ -192,6 +193,8 @@ final class LibraryCollectionView: NSCollectionView {
     }
 
     @objc func copy(_ sender: Any?) { command?(.copy) }
+    /// Pasting into the Library adds the clipboard's image and opens it.
+    @objc func paste(_ sender: Any?) { ImageImporter.shared.annotateClipboard() }
 }
 
 /// The grid is justified like a photo library: each tile keeps its capture's
