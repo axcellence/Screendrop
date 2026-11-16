@@ -21,6 +21,17 @@ final class ImageImporter {
         }
     }
 
+    /// Adds dropped images to the Library. A single image also opens in the
+    /// editor; a batch only lands in the Library rather than opening a
+    /// window per image. Returns false when nothing dropped was an image.
+    func importDropped(_ urls: [URL]) -> Bool {
+        let images = Self.imageURLs(in: urls)
+        guard !images.isEmpty else { return false }
+        let imported = images.map { ScreenshotHistoryStore.shared.importScreenshot(from: $0) }
+        if imported.count == 1 { openEditor?(imported[0]) }
+        return true
+    }
+
     func presentOpenPanel() {
         // From the menu bar the app is usually inactive, and the panel
         // would open behind the frontmost app.

@@ -30,6 +30,7 @@ struct CaptureLibraryView: View {
     @State private var index = CaptureLibraryIndex.shared
     @State private var libraryWindow: NSWindow?
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
+    @State private var isDropTargeted = false
     @AppStorage("captureLibrary.layout") private var layout: CaptureLibraryLayout = .grid
     @AppStorage("captureLibrary.inspectorVisible") private var inspectorVisible = true
     @AppStorage("captureLibrary.sort") private var savedSort: CaptureLibrarySort = .newest
@@ -119,6 +120,17 @@ struct CaptureLibraryView: View {
                     Divider()
                 }
                 browser
+                    // Images from Finder or another app join the Library.
+                    .dropDestination(for: URL.self) { urls, _ in
+                        ImageImporter.shared.importDropped(urls)
+                    } isTargeted: { isDropTargeted = $0 }
+                    .overlay {
+                        if isDropTargeted {
+                            Rectangle()
+                                .strokeBorder(Color.accentColor, lineWidth: 3)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 Divider()
                 statusBar
             }
