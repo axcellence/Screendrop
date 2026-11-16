@@ -1,7 +1,8 @@
 # This fork
 
 A personal fork of [fayazara/Screendrop](https://github.com/fayazara/Screendrop) with four additions
-to the screenshot editor. Everything else is the original app.
+to the screenshot editor and more ways to bring an image into it. Everything else is the original
+app.
 
 ## What is different
 
@@ -20,6 +21,10 @@ to the screenshot editor. Everything else is the original app.
   when the shape is moved back or deleted. With a background the background extends; without one
   the new space takes the screenshot's own edge colour (white when the edge is busy or
   see-through), and **Extra space** in the inspector picks another colour.
+- **Annotate any image.** Besides Finder's Open With, an image can come in through **Open
+  Image…** (`⌘O`), **Annotate Clipboard Image** (`⌘⇧V`, or `⌘V` in the Library), or by dropping it
+  on the Library. Each adds a copy to the Library and leaves the original alone. A batch dropped on
+  the Library is only added; everything else opens in the editor.
 
 A screenshot that uses the highlighter or Handwriting text will not reopen for editing in the
 official app; the exported image is unaffected. A screenshot saved with notes outside the image
