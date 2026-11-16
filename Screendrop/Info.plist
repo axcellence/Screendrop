@@ -35,9 +35,9 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/fayazara/screendrop/main/appcast.xml</string>
+	<string>https://github.com/axcellence/Screendrop/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>MA/6n0fqT0T2updDlkXr8BjhJKoHWik9uf6Lh5pUG7U=</string>
+	<string>loKf9zXPI8KJ5n+JJGkqPA1IM8Ro1gU6HG7saFyJ6TI=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
