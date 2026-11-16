@@ -42,6 +42,9 @@ struct ScreendropApp: App {
         .restorationBehavior(.disabled)
         .commands {
             CommandGroup(after: .newItem) {
+                Button("Open Image…") { ImageImporter.shared.presentOpenPanel() }
+                    .keyboardShortcut("o", modifiers: .command)
+                Divider()
                 Button("Show Library") { CaptureLibraryModel.shared.show() }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
             }
@@ -103,11 +106,12 @@ struct ScreendropApp: App {
             return historyURL
         }
 
-        appDelegate.onOpenFiles = { [openWindow] urls in
-            for url in urls where UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true {
-                let historyURL = ScreenshotHistoryStore.shared.importScreenshot(from: url)
-                openWindow(id: "ANNOTATION_EDITOR", value: historyURL)
-            }
+        // Set before `onOpenFiles`, which flushes files queued at launch.
+        ImageImporter.shared.openEditor = { [openWindow] url in
+            openWindow(id: "ANNOTATION_EDITOR", value: url)
+        }
+        appDelegate.onOpenFiles = { urls in
+            ImageImporter.shared.open(urls)
         }
 
         ScreenRecordingManager.shared.onFinishRecording = { session, displayID in

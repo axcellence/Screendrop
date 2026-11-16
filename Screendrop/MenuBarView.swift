@@ -50,6 +50,13 @@ struct MenuBarView: View {
             Divider()
 
             Button {
+                ImageImporter.shared.presentOpenPanel()
+            } label: {
+                Label("Open Image…", systemImage: "photo")
+            }
+            .keyboardShortcut("o", modifiers: .command)
+
+            Button {
                 CaptureLibraryModel.shared.show()
             } label: {
                 Label("Open Library", systemImage: "square.grid.2x2")
