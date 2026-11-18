@@ -23,6 +23,8 @@ struct RenderElement {
         case numbered(NumberedProps)
         /// Glyph outlines, already positioned in the shape's local space.
         case glyphs(CGPath)
+        /// A picture filling `0, 0, w, h`, drawn in the image pass under every annotation.
+        case image(ImageProps)
     }
 
     var content: Content
@@ -38,7 +40,7 @@ struct RenderElement {
     var cgPath: CGPath? {
         switch content {
         case let .path(path), let .glyphs(path): path
-        case .redaction, .spotlight, .numbered: nil
+        case .redaction, .spotlight, .numbered, .image: nil
         }
     }
 
@@ -73,6 +75,8 @@ enum AnnoShapeRenderer {
             [RenderElement(content: .spotlight(CGSize(width: props.w, height: props.h)))]
         case let .numbered(props):
             [RenderElement(content: .numbered(props))]
+        case let .image(props):
+            [RenderElement(content: .image(props))]
         }
     }
 

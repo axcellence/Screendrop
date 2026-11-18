@@ -10,7 +10,9 @@ import Foundation
 /// and the resolution of the screenshot they hand over - which is what makes the preview a true
 /// reduction of the export rather than a second implementation that happens to agree.
 ///
-/// Four passes, in this order:
+/// Five passes, in this order:
+///  0. Pictures brought into the document, which are paper like the screenshot itself, so every
+///     annotation lands on top of them.
 ///  1. Highlighter strokes, which tint the screenshot itself and so sit on the paper.
 ///  2. Redactions, which transform screenshot pixels and so must sit under everything else.
 ///  3. The spotlight: one dimming layer over the image with a hole punched per highlight shape.
@@ -43,6 +45,12 @@ enum AnnoShapeDrawing {
         /// The flat fill around the page, when the canvas has grown past the screenshot with no
         /// background. Ink that blends with what is beneath it needs this alongside `backdrop`.
         var surround: CGColor? = nil
+        /// Everything beneath the annotations under a context-space rect - fill, screenshot and
+        /// pictures - as an image whose first row is the rect's top. Set by `draw` on the canvas
+        /// when the document holds pictures, which live in this layer rather than under it.
+        fileprivate(set) var underlay: ((CGRect) -> CGImage?)? = nil
+        /// Changes whenever the pictures do, so cached redaction previews over them go stale.
+        fileprivate(set) var underlayKey = ""
 
         var pageRect: CGRect { CGRect(origin: .zero, size: pageSize) }
     }
@@ -59,6 +67,21 @@ enum AnnoShapeDrawing {
     ) {
         let shapes = document.shapes.filter { !skipped.contains($0.id) }
 
+        let images = shapes.filter(\.isImage)
+        for shape in images {
+            drawShape(shape, document: document, in: context, target: target)
+        }
+        var target = target
+        if target.backdrop != nil, !images.isEmpty {
+            // The canvas's screenshot is a separate view underneath, but pictures are drawn here,
+            // so ink that works on what is beneath it has to see them too.
+            let base = target
+            target.underlay = { rect in underlay(under: rect, images: images, document: document, target: base) }
+            target.underlayKey = images.map {
+                "\($0.imageProps?.asset ?? ""):\($0.x):\($0.y):\($0.rotation):\($0.opacity):\($0.imageProps?.w ?? 0):\($0.imageProps?.h ?? 0)"
+            }.joined(separator: "|")
+        }
+
         // Before the redactions, so a blur laid over a highlight still hides what is under it.
         for shape in shapes where shape.isMarker {
             drawMarker(shape, document: document, in: context, target: target)
@@ -70,7 +93,7 @@ enum AnnoShapeDrawing {
 
         drawSpotlight(shapes.filter { $0.isHighlight }, in: context, target: target)
 
-        for shape in shapes where !shape.isRedaction && !shape.isHighlight && !shape.isMarker {
+        for shape in shapes where !shape.isRedaction && !shape.isHighlight && !shape.isMarker && !shape.isImage {
             drawShape(shape, document: document, in: context, target: target)
         }
     }
@@ -98,7 +121,8 @@ enum AnnoShapeDrawing {
             guard case let .path(localPath) = element.content, let fill = element.fill,
                   let path = localPath.copy(using: &toContext) else { continue }
             let bounds = path.boundingBoxOfPath
-            let backdrop = target.backdrop.flatMap { backdropCrop($0, under: bounds, target: target) }
+            let underlay = target.underlay?(bounds.integral).map { (image: $0, destination: bounds.integral) }
+            let backdrop = underlay ?? target.backdrop.flatMap { backdropCrop($0, under: bounds, target: target) }
 
             // What the stroke is going over: the screenshot on the canvas, the composed image in
             // an export.
@@ -107,7 +131,7 @@ enum AnnoShapeDrawing {
                 .map { $0 < darkBackdropLuminance } ?? false
 
             context.saveGState()
-            if target.backdrop != nil, let surround = target.surround {
+            if underlay == nil, target.backdrop != nil, let surround = target.surround {
                 // Beyond the screenshot the stroke goes over the grown fill, as in the export.
                 context.addPath(path)
                 context.setFillColor(surround)
@@ -247,12 +271,91 @@ enum AnnoShapeDrawing {
                 }
             case let .numbered(props):
                 drawNumbered(props, in: context)
+            case let .image(props):
+                drawImage(props, in: context, isCanvas: target.isFlippedContext)
             case .redaction, .spotlight:
                 // Handled by their own passes, which need the screenshot underneath.
                 break
             }
         }
         context.restoreGState()
+    }
+
+    // MARK: - Picture
+
+    /// Draws a picture into `0, 0, w, h` of the shape's own (y-down) space. A picture whose file is
+    /// missing shows as a faint box on the canvas, so it can still be found and deleted, and is
+    /// left out of an export.
+    private static func drawImage(_ props: ImageProps, in context: CGContext, isCanvas: Bool) {
+        let rect = CGRect(x: 0, y: 0, width: props.w, height: props.h)
+        guard let image = AnnoImageAssets.shared.image(named: props.asset) else {
+            guard isCanvas else { return }
+            context.setFillColor(CGColor(gray: 0.5, alpha: 0.2))
+            context.fill(rect)
+            context.setStrokeColor(CGColor(gray: 0.5, alpha: 0.6))
+            context.setLineWidth(max(1, min(props.w, props.h) / 200))
+            context.stroke(rect)
+            return
+        }
+        context.saveGState()
+        context.interpolationQuality = .high
+        // Page space runs y-down, and Core Graphics lays an image's first row at the rect's
+        // largest y, so turn the space over within the rect.
+        context.translateBy(x: 0, y: props.h)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: rect)
+        context.restoreGState()
+    }
+
+    /// What lies beneath the annotations under a canvas rect, at the screenshot preview's own
+    /// resolution: the grown fill, the screenshot, then the pictures. The image's first row is the
+    /// rect's top, the same way up as a crop of the screenshot.
+    private static func underlay(
+        under contextRect: CGRect,
+        images: [AnnoShape],
+        document: AnnoDocument,
+        target: Target
+    ) -> CGImage? {
+        let rect = contextRect.integral
+        guard let backdrop = target.backdrop, rect.width >= 1, rect.height >= 1,
+              target.pageSize.width > 0 else { return nil }
+        let contextPerPage = hypot(target.transform.a, target.transform.b)
+        guard contextPerPage > 0 else { return nil }
+        let pixelsPerPage = CGFloat(backdrop.width) / target.pageSize.width
+        var density = pixelsPerPage / contextPerPage
+        // Keep a huge rect at deep zoom from asking for an enormous bitmap.
+        density = min(density, 4096 / max(rect.width, rect.height))
+        let width = max(1, Int((rect.width * density).rounded(.up)))
+        let height = max(1, Int((rect.height * density).rounded(.up)))
+        let space = backdrop.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
+            ?? CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        // The canvas's own coordinates, y-down, so everything below draws exactly as it does there.
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: density, y: -density)
+        context.translateBy(x: -rect.minX, y: -rect.minY)
+
+        if let surround = target.surround {
+            context.setFillColor(surround)
+            context.fill(rect)
+        }
+        if let crop = backdropCrop(backdrop, under: rect, target: target) {
+            context.saveGState()
+            context.interpolationQuality = .high
+            context.translateBy(x: 0, y: crop.destination.midY)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: 0, y: -crop.destination.midY)
+            context.draw(crop.image, in: crop.destination)
+            context.restoreGState()
+        }
+        for shape in images {
+            drawShape(shape, document: document, in: context, target: target)
+        }
+        return context.makeImage()
     }
 
     // MARK: - Numbered callout
@@ -344,7 +447,7 @@ enum AnnoShapeDrawing {
         in context: CGContext,
         target: Target
     ) {
-        guard case let .redaction(props) = shape.kind, let sample = target.sample else { return }
+        guard case let .redaction(props) = shape.kind, let sample = target.underlay ?? target.sample else { return }
 
         // Sample the axis-aligned bounding box in context space, process it upright, then lay it
         // back down clipped to the shape's own rotated rect. A rotated blur then blurs the pixels
@@ -365,7 +468,12 @@ enum AnnoShapeDrawing {
         }
         let processed: CGImage?
         if let cache = target.redactionPreviewCache {
-            processed = cache.image(kind: props.kind.rawValue, density: props.density, bounds: contextBounds, render: render)
+            processed = cache.image(
+                kind: props.kind.rawValue + target.underlayKey,
+                density: props.density,
+                bounds: contextBounds,
+                render: render
+            )
         } else {
             processed = render()
         }
