@@ -70,11 +70,15 @@ extension AnnotationEditorModel {
                 kind: .image(ImageProps(asset: item.name, w: frame.width, h: frame.height))
             )
         }
+        guard !shapes.isEmpty else {
+            errorMessage = "There's no room on the canvas for another image."
+            return
+        }
         // Fit first, so the canvas animates out to show the picture where it landed.
         fitCanvas()
         engine.insertImages(shapes)
         selectedTool = .select
-        errorMessage = nil
+        errorMessage = shapes.count < stored.count ? "There wasn't room on the canvas for every image." : nil
     }
 
     private static func imageFileURLs(in pasteboard: NSPasteboard) -> [URL] {

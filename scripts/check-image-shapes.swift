@@ -155,6 +155,21 @@ struct ImageShapeChecks {
                && whole.height <= AnnotationCanvasGrowth.maximumCanvasDimension,
                "a huge picture pushes the canvas past the cap: \(huge)")
         expect(abs(huge[0].width / huge[0].height - 2) < 0.01, "a scaled-down picture lost its proportions: \(huge)")
+
+        // Picture after picture beside a 4K screenshot: every one lands inside the cap, and once
+        // there is no room the rest are left out rather than placed off the canvas.
+        let fourK = CGRect(x: 0, y: 0, width: 3840, height: 2160)
+        var placed: [CGRect] = []
+        for _ in 0..<20 {
+            placed += AnnoImagePlacement.frames(for: [fourK.size], screenshot: fourK, existing: placed)
+        }
+        let cap = AnnotationCanvasGrowth.maximumCanvasDimension
+        let everything = placed.reduce(fourK) { $0.union($1) }
+        let margin = (2160 * AnnotationCanvasGrowth.marginFraction).rounded(.up)
+        expect(everything.width + 2 * margin <= cap && everything.height + 2 * margin <= cap,
+               "repeated pictures pushed the canvas past the cap: \(everything.size)")
+        expect(placed.count < 20 && placed.allSatisfy { $0.width >= 1 && $0.height >= 1 },
+               "placement never ran out of room, or produced an empty frame: \(placed.count)")
     }
 
     // MARK: - Assets and document
