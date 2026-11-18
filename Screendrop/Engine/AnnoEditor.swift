@@ -289,6 +289,17 @@ final class AnnoEditor {
         }
     }
 
+    /// Adds pictures as one undoable step and leaves them selected, ready to move.
+    func insertImages(_ shapes: [AnnoShape]) {
+        guard !shapes.isEmpty else { return }
+        stopEditingText()
+        markUndo()
+        for shape in shapes { document.add(shape) }
+        tool = .select
+        selectedIds = Set(shapes.map(\.id))
+        notifyChanged()
+    }
+
     func selectAll() {
         selectedIds = Set(document.shapes.map { $0.id })
         tool = .select
