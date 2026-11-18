@@ -1,6 +1,6 @@
 # This fork
 
-A personal fork of [fayazara/Screendrop](https://github.com/fayazara/Screendrop) with four additions
+A personal fork of [fayazara/Screendrop](https://github.com/fayazara/Screendrop) with five additions
 to the screenshot editor and more ways to bring an image into it. Everything else is the original
 app.
 
@@ -25,11 +25,16 @@ app.
   Image…** (`⌘O`), **Annotate Clipboard Image** (`⌘⇧V`, or `⌘V` in the Library), or by dropping it
   on the Library. Each adds a copy to the Library and leaves the original alone. A batch dropped on
   the Library is only added; everything else opens in the editor.
+- **Another screenshot in the editor.** Drag an image onto the editor, or press `⌘V` with one on
+  the clipboard, and it lands beside the screenshot as an object of its own, with the canvas
+  growing to hold it. Move it, scale it from a corner (it keeps its proportions) and draw over it;
+  blur, pixelate and the highlighter work on it too. Handy for comparing two pages in one marked-up
+  image. It stays a separate object when the capture is reopened.
 
-A screenshot that uses the highlighter or Handwriting text will not reopen for editing in the
-official app; the exported image is unaffected. A screenshot saved with notes outside the image
-reopens there with the canvas back at the screenshot's size, so exporting it again from the
-official app cuts those notes off.
+A screenshot that uses the highlighter, Handwriting text or another image will not reopen for
+editing in the official app; the exported image is unaffected. A screenshot saved with notes
+outside the image reopens there with the canvas back at the screenshot's size, so exporting it
+again from the official app cuts those notes off.
 
 ## How it is set up
 
