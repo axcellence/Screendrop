@@ -167,6 +167,20 @@ struct ImageShapeChecks {
         let again = try! AnnoImageAssets.shared.store(data: try! Data(contentsOf: url))
         expect(again.name == stored.name, "the same picture stored twice got two names")
 
+        // Two captures holding the same picture: losing one copy leaves the other in use.
+        let first = workDirectory.appendingPathComponent("first.assets")
+        let second = workDirectory.appendingPathComponent("second.assets")
+        for directory in [first, second] {
+            try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try! FileManager.default.copyItem(at: AnnoImageAssets.shared.url(for: stored.name)!, to: directory.appendingPathComponent(stored.name))
+        }
+        AnnoImageAssets.shared.registerContents(of: first)
+        AnnoImageAssets.shared.registerContents(of: second)
+        try! FileManager.default.removeItem(at: AnnoImageAssets.workingDirectory.appendingPathComponent(stored.name))
+        try! FileManager.default.removeItem(at: second)
+        expect(AnnoImageAssets.shared.url(for: stored.name) == first.appendingPathComponent(stored.name),
+               "losing one capture's copy stranded the other: \(String(describing: AnnoImageAssets.shared.url(for: stored.name)))")
+
         // TIFF from the pasteboard is re-encoded and still decodes the right way up.
         let tiff = NSBitmapImageRep(cgImage: picture.cgImage).tiffRepresentation!
         let fromTIFF = try! AnnoImageAssets.shared.store(data: tiff)
