@@ -14,7 +14,9 @@ nonisolated final class AnnoImageAssets: @unchecked Sendable {
     static let shared = AnnoImageAssets()
 
     private let lock = NSLock()
-    private var locations: [String: URL] = [:]
+    /// Every known copy of each picture. Two captures can hold the same picture, and one being
+    /// trashed must not strand an editor still drawing the other.
+    private var locations: [String: [URL]] = [:]
     private var decoded: [String: CGImage] = [:]
 
     /// Where pictures wait between being brought in and the save that moves them next to the
@@ -27,7 +29,10 @@ nonisolated final class AnnoImageAssets: @unchecked Sendable {
     // MARK: - Locating
 
     func register(_ url: URL, name: String) {
-        lock.withLock { locations[name] = url }
+        lock.withLock {
+            locations[name, default: []].removeAll { $0 == url }
+            locations[name, default: []].append(url)
+        }
     }
 
     /// Registers every stored picture in a folder, such as a capture's `.assets` folder.
@@ -35,13 +40,16 @@ nonisolated final class AnnoImageAssets: @unchecked Sendable {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
         lock.withLock {
             for name in names where !name.hasPrefix(".") {
-                locations[name] = directory.appendingPathComponent(name)
+                let url = directory.appendingPathComponent(name)
+                locations[name, default: []].removeAll { $0 == url }
+                locations[name, default: []].append(url)
             }
         }
     }
 
     func url(for name: String) -> URL? {
-        if let url = lock.withLock({ locations[name] }), FileManager.default.fileExists(atPath: url.path) {
+        let known = lock.withLock { locations[name] ?? [] }
+        if let url = known.reversed().first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
             return url
         }
         let working = Self.workingDirectory.appendingPathComponent(name)
