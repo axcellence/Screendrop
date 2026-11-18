@@ -395,8 +395,11 @@ extension AnnoEditor {
     /// Bind an arrow terminal to whatever shape is under the pointer, or clear the binding.
     private func bindTerminal(arrowId: AnnoShapeID, terminal: ArrowTerminal, at pagePoint: Vec, precise: Bool) {
         // Arrows don't bind to arrows, to themselves, or to the tools that aren't really objects.
+        // Nor to pictures, which are paper like the screenshot: an arrow onto one ends where it
+        // is dropped, as it does on the screenshot.
         let target = document.shapes.reversed().first { shape in
-            guard shape.id != arrowId, !shape.isArrow, !shape.isHighlight, !shape.isRedaction else { return false }
+            guard shape.id != arrowId, !shape.isArrow, !shape.isHighlight, !shape.isRedaction,
+                  !shape.isImage else { return false }
             let local = document.pointInShapeSpace(shape, pagePoint)
             return document.geometry(shape).hitTestPoint(
                 local,
@@ -477,7 +480,22 @@ extension AnnoEditor {
             if origin != anchor.y { scaleY = (pointerInSelection.y - anchor.y) / (origin - anchor.y) }
         }
 
-        if pointer.shift, handle.isCorner {
+        if selectionKeepsProportions, handle.isCorner {
+            // A picture follows the pointer along the corner's diagonal, so dragging straight in
+            // or out from either side shrinks or grows it, and it never flips.
+            let corner = Vec(
+                bounds.box.x + bounds.box.w * (anchorNormalized.x > 0.5 ? 0 : 1),
+                bounds.box.y + bounds.box.h * (anchorNormalized.y > 0.5 ? 0 : 1)
+            )
+            let diagonal = Vec.sub(corner, anchor)
+            let reach = Vec.sub(pointerInSelection, anchor)
+            let length = diagonal.x * diagonal.x + diagonal.y * diagonal.y
+            // No picture's shorter side goes below a pixel.
+            let floor = Swift.max(0.01, selectedShapes.compactMap(\.imageProps).map { 1 / Swift.min($0.w, $0.h) }.max() ?? 0)
+            let s = length > 0 ? Swift.max(floor, (reach.x * diagonal.x + reach.y * diagonal.y) / length) : 1
+            scaleX = s
+            scaleY = s
+        } else if pointer.shift, handle.isCorner {
             // Preserve the aspect ratio from the larger of the two scales.
             let s = abs(scaleX) > abs(scaleY) ? abs(scaleX) : abs(scaleY)
             scaleX = s * (scaleX < 0 ? -1 : 1)
@@ -566,6 +584,13 @@ extension AnnoEditor {
                     }
                 }
                 shape.kind = .text(props)
+            case var .image(props):
+                // A picture never stretches. Its selection scales evenly, so the selection's own
+                // factor applies whatever the picture's rotation.
+                let uniform = (abs(scaleX) + abs(scaleY)) / 2
+                props.w *= uniform
+                props.h *= uniform
+                shape.kind = .image(props)
             }
         }
     }

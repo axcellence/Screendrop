@@ -236,6 +236,8 @@ enum AnnoShapeGeometry {
             return Rectangle2d(width: props.w, height: props.h, isFilled: true)
         case let .numbered(props):
             return Ellipse2d(width: props.diameter, height: props.diameter, isFilled: true)
+        case let .image(props):
+            return Rectangle2d(width: props.w, height: props.h, isFilled: true)
         }
     }
 

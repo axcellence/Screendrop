@@ -134,6 +134,53 @@ final class ScreenshotHistoryStore {
         return directory.appendingPathComponent(fileName)
     }
 
+    /// Folder holding the pictures that image shapes in the sidecar draw,
+    /// e.g. `Screendrop_2026.png` -> `Screendrop_2026.png.assets`.
+    static func assetsDirectoryURL(for displayURL: URL) -> URL {
+        displayURL.appendingPathExtension("assets")
+    }
+
+    /// Copies the pictures `shapes` draw into the capture's assets folder. Names are content
+    /// hashes, so a file already there is already right.
+    private static func storeAssets(for shapes: [AnnoShape], displayURL: URL) throws {
+        let names = Set(shapes.compactMap { $0.imageProps?.asset })
+        guard !names.isEmpty else { return }
+        let directory = assetsDirectoryURL(for: displayURL)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for name in names {
+            let destination = directory.appendingPathComponent(name)
+            if !FileManager.default.fileExists(atPath: destination.path),
+               let source = AnnoImageAssets.shared.url(for: name) {
+                try FileManager.default.copyItem(at: source, to: destination)
+            }
+            AnnoImageAssets.shared.register(destination, name: name)
+        }
+    }
+
+    /// Takes pictures the saved shapes no longer draw out of the folder, and removes the folder
+    /// once it is empty. They go back to the editors' working folder rather than away, so undoing
+    /// past the save can still bring a deleted picture back.
+    private static func pruneAssets(keeping shapes: [AnnoShape], displayURL: URL) {
+        let directory = assetsDirectoryURL(for: displayURL)
+        let names = Set(shapes.compactMap { $0.imageProps?.asset })
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        let working = AnnoImageAssets.workingDirectory
+        try? FileManager.default.createDirectory(at: working, withIntermediateDirectories: true)
+        for name in contents where !names.contains(name) {
+            let source = directory.appendingPathComponent(name)
+            let destination = working.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try? FileManager.default.removeItem(at: source)
+                AnnoImageAssets.shared.register(destination, name: name)
+            } else if (try? FileManager.default.moveItem(at: source, to: destination)) != nil {
+                AnnoImageAssets.shared.register(destination, name: name)
+            }
+        }
+        if (try? FileManager.default.contentsOfDirectory(atPath: directory.path))?.isEmpty == true {
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+
     /// Loads the editable annotation document for a screenshot, if one exists.
     func loadEditDocument(for displayURL: URL) -> AnnotationDocument? {
         let documentURL = Self.editDocumentURL(for: displayURL)
@@ -304,6 +351,7 @@ final class ScreenshotHistoryStore {
         }
         var document = document
         document.baseImageFileName = baseDestination.lastPathComponent
+        try Self.storeAssets(for: document.shapes, displayURL: displayURL)
         let documentData = try JSONEncoder().encode(document)
         let temporaryDocument = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try documentData.write(to: temporaryDocument, options: .atomic)
@@ -311,6 +359,7 @@ final class ScreenshotHistoryStore {
         replacements.append((renderedURL, displayURL))
         replacements.append((temporaryDocument, Self.editDocumentURL(for: displayURL)))
         try ScreenshotEditFileTransaction.apply(replacements: replacements)
+        Self.pruneAssets(keeping: document.shapes, displayURL: displayURL)
 
         if let index = items.firstIndex(where: { $0.fileName == displayURL.lastPathComponent }) {
             let imageSize = ScreenshotImageLoader.imageSize(at: displayURL) ?? .zero
@@ -337,6 +386,7 @@ final class ScreenshotHistoryStore {
             replacements: [(baseDestination, displayURL)],
             removing: [baseDestination, documentURL]
         )
+        Self.pruneAssets(keeping: [], displayURL: displayURL)
         if let index = items.firstIndex(where: { $0.fileName == displayURL.lastPathComponent }) {
             let imageSize = ScreenshotImageLoader.imageSize(at: displayURL) ?? .zero
             items[index].updatedAt = Date()
@@ -356,7 +406,8 @@ final class ScreenshotHistoryStore {
             auxiliaryURLs = [
                 item.url,
                 Self.baseImageURL(for: item.url),
-                Self.editDocumentURL(for: item.url)
+                Self.editDocumentURL(for: item.url),
+                Self.assetsDirectoryURL(for: item.url)
             ]
         }
 

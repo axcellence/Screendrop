@@ -185,6 +185,7 @@ final class AnnotationEditorModel {
         sourceURL = url
 
         let document = ScreenshotHistoryStore.shared.loadEditDocument(for: url)
+        AnnoImageAssets.shared.registerContents(of: ScreenshotHistoryStore.assetsDirectoryURL(for: url))
         let candidateBaseURL = ScreenshotHistoryStore.baseImageURL(for: url)
         let renderSourceURL: URL
         // Background-only and crop-only edits still have a preserved base.
@@ -247,6 +248,8 @@ final class AnnotationEditorModel {
         wallpaperCacheLease = nil
         // A closed SwiftUI scene can outlive its window. Release decoded
         // pixels and edit history now instead of waiting for model deinit.
+        // Pictures decode again for any other editor still drawing them.
+        AnnoImageAssets.shared.releaseDecoded()
         savedSnapshot = nil
         sourceURL = nil
         baseImageURL = nil
@@ -446,7 +449,7 @@ final class AnnotationEditorModel {
             case var .arrow(p): p.swatch = swatch; shape.kind = .arrow(p)
             case var .text(p): p.swatch = swatch; shape.kind = .text(p)
             case var .numbered(p): p.swatch = swatch; shape.kind = .numbered(p)
-            case .redaction, .highlight: break
+            case .redaction, .highlight, .image: break
             }
         }
     }
@@ -853,6 +856,10 @@ extension AnnotationEditorModel {
             p.fontSize *= uniform
             p.w *= sx
             shape.kind = .text(p)
+        case var .image(p):
+            p.w *= uniform
+            p.h *= uniform
+            shape.kind = .image(p)
         }
     }
 

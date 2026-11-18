@@ -177,6 +177,16 @@ struct NumberedProps: Codable, Equatable {
     var swatch: AnnotationSwatch = .red
 }
 
+/// Another picture brought into the document, such as a second screenshot to compare against.
+struct ImageProps: Codable, Equatable {
+    /// The stored file's name, resolved through `AnnoImageAssets`. Never a path, so a document
+    /// stays valid when its folder moves.
+    var asset: String
+    /// Size in page units. Resizing always keeps `w / h` at the picture's own proportions.
+    var w: Double
+    var h: Double
+}
+
 // MARK: - Shape
 
 enum AnnoShapeKind: Codable, Equatable {
@@ -187,6 +197,7 @@ enum AnnoShapeKind: Codable, Equatable {
     case redaction(RedactionProps)
     case highlight(HighlightProps)
     case numbered(NumberedProps)
+    case image(ImageProps)
 }
 
 struct AnnoShape: Codable, Equatable, Identifiable {
@@ -224,7 +235,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .geo(p): p.strokeWidth
         case let .draw(p): p.strokeWidth
         case let .arrow(p): p.strokeWidth
-        case .text, .redaction, .highlight, .numbered: 0
+        case .text, .redaction, .highlight, .numbered, .image: 0
         }
     }
 
@@ -244,6 +255,8 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .redaction(p): p.kind == .blur ? .blur : .pixelate
         case .highlight: .highlight
         case .numbered: .numberedCircle
+        // A picture has no style of its own, so it maps to the tool with no style controls.
+        case .image: .select
         }
     }
 
@@ -254,7 +267,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .arrow(p): p.swatch
         case let .text(p): p.swatch
         case let .numbered(p): p.swatch
-        case .redaction, .highlight: nil
+        case .redaction, .highlight, .image: nil
         }
     }
 
@@ -266,7 +279,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .draw(p): p.isClosed || p.ink == .marker
         case .arrow: false
         // Text, redactions, the highlight and numbered callouts are solid objects.
-        case .text, .redaction, .highlight, .numbered: true
+        case .text, .redaction, .highlight, .numbered, .image: true
         }
     }
 
@@ -323,6 +336,16 @@ struct AnnoShape: Codable, Equatable, Identifiable {
 
     var numberedProps: NumberedProps? {
         if case let .numbered(p) = kind { return p }
+        return nil
+    }
+
+    var isImage: Bool {
+        if case .image = kind { return true }
+        return false
+    }
+
+    var imageProps: ImageProps? {
+        if case let .image(p) = kind { return p }
         return nil
     }
 }

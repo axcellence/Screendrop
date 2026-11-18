@@ -120,6 +120,8 @@ extension AnnotationCanvasGrowth {
                         : bounds.insetBy(dx: -element.strokeWidth / 2, dy: -element.strokeWidth / 2)
                 case let .numbered(props):
                     local = CGRect(x: 0, y: 0, width: props.diameter, height: props.diameter)
+                case let .image(props):
+                    local = CGRect(x: 0, y: 0, width: props.w, height: props.h)
                 case .redaction, .spotlight:
                     continue
                 }

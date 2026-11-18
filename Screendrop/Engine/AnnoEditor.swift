@@ -240,6 +240,11 @@ final class AnnoEditor {
 
     // MARK: - Selection
 
+    /// Whether resizing the selection must keep its proportions: true when it holds a picture.
+    var selectionKeepsProportions: Bool {
+        selectedShapes.contains(where: \.isImage)
+    }
+
     var selectedShapes: [AnnoShape] {
         document.shapes.filter { selectedIds.contains($0.id) }
     }
@@ -262,7 +267,10 @@ final class AnnoEditor {
     /// thin strokes stay clickable.
     func hitShape(at pagePoint: Vec) -> AnnoShape? {
         let margin = Swift.max(4, pageDistance(forScreen: 8))
-        for shape in document.shapes.reversed() {
+        // Pictures are drawn beneath every annotation, so they are the last thing a click finds.
+        let shapes = document.shapes
+        let ordered = shapes.reversed().filter { !$0.isImage } + shapes.reversed().filter(\.isImage)
+        for shape in ordered {
             let localPoint = document.pointInShapeSpace(shape, pagePoint)
             let geometry = document.geometry(shape)
             if geometry.hitTestPoint(localPoint, margin: margin, hitInside: shape.isFilled) {
@@ -336,7 +344,9 @@ final class AnnoEditor {
             (.right, Vec(1, 0.5)), (.bottomRight, Vec(1, 1)), (.bottom, Vec(0.5, 1)),
             (.bottomLeft, Vec(0, 1)), (.left, Vec(0, 0.5)),
         ]
-        for (handle, normalized) in handles {
+        // An edge handle would stretch a picture, so a selection holding one has corners only.
+        let keepsProportions = selectionKeepsProportions
+        for (handle, normalized) in handles where handle.isCorner || !keepsProportions {
             let screen = pageToScreen(bounds.pagePoint(normalized))
             if Vec.dist(screen, screenPoint) <= hitRadius { return handle }
         }
