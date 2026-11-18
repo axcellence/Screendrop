@@ -91,6 +91,7 @@ struct AnnotationEditorWindow: View {
                 onUndo: model.undo,
                 onRedo: model.redo,
                 onSelectAll: model.selectAllAnnotations,
+                onPaste: { model.insertImages(from: .general) },
                 onSelectTool: model.selectTool,
                 onZoomIn: model.zoomIn,
                 onZoomOut: model.zoomOut,
@@ -237,6 +238,16 @@ struct AnnotationEditorWindow: View {
                     image: previewImage,
                     onEditorInteraction: clearInspectorFocus
                 )
+                // Another screenshot dropped here joins this one as a picture beside it.
+                .dropDestination(for: URL.self) { urls, _ in
+                    guard model.insertImages(fileURLs: urls) else { return false }
+                    // The drag came from another app; bring the editor forward so the
+                    // picture can be moved straight away rather than after a first click.
+                    let number = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
+                    NSApp.window(withWindowNumber: number)?.makeKeyAndOrderFront(nil)
+                    NSApp.activate()
+                    return true
+                }
             } else if let errorMessage = model.errorMessage {
                 // A load failure (missing/unreadable source file, e.g. a stale
                 // URL replayed by macOS window restoration) should never sit

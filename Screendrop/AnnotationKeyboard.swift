@@ -13,6 +13,8 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     let onUndo: () -> Void
     let onRedo: () -> Void
     let onSelectAll: () -> Void
+    /// Returns whether it found a picture to paste; the key passes on when it did not.
+    let onPaste: () -> Bool
     let onSelectTool: (AnnotationTool) -> Void
     let onZoomIn: () -> Void
     let onZoomOut: () -> Void
@@ -41,6 +43,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.onUndo = onUndo
         view.onRedo = onRedo
         view.onSelectAll = onSelectAll
+        view.onPaste = onPaste
         view.onSelectTool = onSelectTool
         view.onZoomIn = onZoomIn
         view.onZoomOut = onZoomOut
@@ -61,6 +64,7 @@ final class AnnotationKeyCommandHandlerView: NSView {
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onSelectAll: (() -> Void)?
+    var onPaste: (() -> Bool)?
     var onSelectTool: ((AnnotationTool) -> Void)?
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
@@ -148,6 +152,10 @@ final class AnnotationKeyCommandHandlerView: NSView {
 
             if Self.isSelectAll(event) {
                 self.onSelectAll?()
+                return nil
+            }
+
+            if Self.isPaste(event), self.onPaste?() == true {
                 return nil
             }
 
@@ -241,6 +249,13 @@ final class AnnotationKeyCommandHandlerView: NSView {
         event.modifierFlags.contains(.command)
             && !event.modifierFlags.contains(.shift)
             && event.charactersIgnoringModifiers?.lowercased() == "a"
+    }
+
+    private static func isPaste(_ event: NSEvent) -> Bool {
+        event.modifierFlags.contains(.command)
+            && !event.modifierFlags.contains(.shift)
+            && !event.modifierFlags.contains(.option)
+            && event.charactersIgnoringModifiers?.lowercased() == "v"
     }
 
     private static func isZoomIn(_ event: NSEvent) -> Bool {
