@@ -296,9 +296,9 @@ final class AnnotationKeyCommandHandlerView: NSView {
         case "a": return .arrow
         case "p": return .pixelate
         case "b": return .blur
-        case "m": return .marker
+        case "h", "m": return .marker
         case "1": return .numberedCircle
-        case "h": return .select
+        case "v": return .select
         default: return nil
         }
     }

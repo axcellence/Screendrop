@@ -159,7 +159,7 @@ private extension AnnotationTool {
     /// The single-key shortcut AnnotationKeyboard maps to this tool.
     var shortcutKey: String? {
         switch self {
-        case .select: "H"
+        case .select: "V"
         case .rectangle: "R"
         case .ellipse: "O"
         case .text: "T"
@@ -167,7 +167,7 @@ private extension AnnotationTool {
         case .arrow: "A"
         case .pixelate: "P"
         case .blur: "B"
-        case .marker: "M"
+        case .marker: "H"
         case .numberedCircle: "1"
         default: nil
         }
