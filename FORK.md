@@ -10,9 +10,10 @@ app.
   with thick and thin parts and ends that overshoot, instead of a ruler-straight outline. The
   **Style** row in the inspector switches between Hand-drawn and Clean; hand-drawn is the default
   and the choice is remembered.
-- **Highlighter** (`M`). A freehand marker that tints what it passes over and leaves the text
+- **Highlighter** (`H`, or `M`). A freehand marker that tints what it passes over and leaves the text
   readable, with a scalloped marker edge at each end. It keeps its own colour and size, apart from
   the pen's. The existing Highlight tool, which dims everything outside a region, is unchanged.
+  Select moves from `H` to `V` to make room.
 - **Handwriting text.** A fourth font, Handwriting (Caveat, a marker hand), after the SF faces. It
   ships inside the app with its licence, so it looks the same on any Mac. Bold switches its weight;
   it has no italic. It is the default for new text and the choice is remembered.
